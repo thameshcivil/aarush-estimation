@@ -62,7 +62,7 @@ async function buildFromRunningBills(base, files) {
 const _newProject = ACT.newProject;
 ACT.newProject = async (el) => {
   const r = await dialog('New project', `
-    <div class="grid"><label class="f">Project name<input name="name" type="text" placeholder="e.g. Casagrand Aria"></label>
+    <div class="grid"><label class="f">Project name<input name="name" type="text" placeholder="e.g. Green Park Towers"></label>
     <label class="f">How to start<select name="how"><option value="rab">Upload running bills – RAB 001 to latest (recommended)</option><option value="manual">Set up items, rates & blocks by hand</option></select></label></div>
     <p class="small muted">With running bills, the app reads every workbook (Invoice, abstracts and quantity abstracts) and builds items, rates and rate revisions, blocks, locations and every bill exactly as billed, so the next bill continues from the latest one.</p>`, [['cancel', 'Cancel'], ['ok', 'Next', 'p']]);
   if (r.action !== 'ok') return;
