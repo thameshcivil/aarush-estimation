@@ -664,6 +664,7 @@ function vSettings() {
   return { title: 'Settings', html: `
   <div class="card"><h2>Sync & account</h2>
     ${cloud && s ? `<div class="okbox">Signed in as <b>${esc(s.user.email)}</b> · Workspace <b>${esc(Store.getMeta('wsName') || '')}</b> (${esc(Store.getMeta('wsRole') || '')})<br><span class="small">${esc(Sync.msg || '')}</span></div>
+      <p class="small muted">Changes are saved on this device at once. They are sent to the cloud when you tap <b>Sync now</b> (or the status at the top right, which shows how many changes are waiting), when the app opens, and every 6 hours while it is open.${Store.getMeta('lastSyncAt') ? ' Last synced ' + esc(new Date(Store.getMeta('lastSyncAt')).toLocaleString()) + '.' : ''}</p>
       <div class="row"><button class="btn" data-act="syncNow">Sync now</button><button class="btn" data-act="pickWs">Switch workspace</button><span class="sp"></span><button class="btn d" data-act="signOut">Sign out</button></div>`
     : `<p class="muted" style="margin-top:0">Data is saved only on this device. Turn on cloud sync to use the same data on your Android phone and Mac and to add team members.</p>
       <button class="btn p" data-act="goCloud">Turn on cloud sync</button>`}

@@ -1,6 +1,6 @@
 /* Aarush Estimation – app core: utilities, local store, cloud sync */
 'use strict';
-const APP_VERSION = '1.7.0';
+const APP_VERSION = '1.7.1';
 const $ = (s, el) => (el || document).querySelector(s);
 const $$ = (s, el) => Array.from((el || document).querySelectorAll(s));
 const esc = (s) => String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -147,9 +147,12 @@ const Sync = (() => {
   function setStatus(s, m) {
     status = s; msg = m || '';
     const el = $('#sync'); if (!el) return;
-    el.className = s === 'ok' ? 'ok' : s === 'busy' ? 'busy' : s === 'err' ? 'err' : '';
-    el.querySelector('span').textContent = s === 'local' ? 'This device' : s === 'ok' ? 'Synced' : s === 'busy' ? 'Syncing…' : 'Offline';
-    el.title = msg || el.querySelector('span').textContent;
+    // changes waiting to be sent: shown on the pill, sent when it is tapped (or by the 6-hourly sync)
+    const pend = s !== 'local' && s !== 'busy' && isCloud() ? Store.dirty().length : 0;
+    el.className = pend ? 'pend' : s === 'ok' ? 'ok' : s === 'busy' ? 'busy' : s === 'err' ? 'err' : '';
+    el.querySelector('span').textContent = s === 'local' ? 'This device' : s === 'busy' ? 'Syncing…' : pend ? `Sync now · ${pend}` : s === 'ok' ? 'Synced' : 'Offline';
+    const last = Store.getMeta('lastSyncAt');
+    el.title = (pend ? pend + ' change(s) saved on this device – tap to sync now. ' : '') + (msg || '') + (last ? ' · Last synced ' + new Date(last).toLocaleString() : '') + ' · Auto sync every 6 hours';
   }
   async function raw(path, opts, token) {
     const { url, key } = cfg();
@@ -230,22 +233,27 @@ const Sync = (() => {
         if (rows.length < 100) break; page++;
       }
       Store.setMeta('lastPull_' + org, maxTs);
+      Store.setMeta('lastSyncAt', new Date().toISOString());
       setStatus('ok', 'Last synced ' + new Date().toLocaleTimeString());
     } catch (e) {
       console.warn('sync', e); setStatus('err', 'Sync error: ' + e.message);
     } finally { running = false; }
     if (changed && typeof onRemoteChange === 'function') onRemoteChange();
   }
-  function schedule(ms) { clearTimeout(timer); timer = setTimeout(run, ms === undefined ? 1200 : ms); }
+  // No sync on every change: a change only updates the pill ("Sync now · n"). Sync runs when the pill is tapped,
+  // when the app opens, and every 6 hours while it is open.
+  const AUTO_MS = 6 * 3600 * 1000;
+  function schedule() { clearTimeout(timer); timer = setTimeout(() => setStatus(status, msg), 250); }
+  const due = () => { const l = Store.getMeta('lastSyncAt'); return !l || Date.now() - new Date(l).getTime() >= AUTO_MS; };
   let started = false;
   function start() {
     clearInterval(poll);
-    if (started) { poll = setInterval(() => { if (document.visibilityState === 'visible') run(); }, 20000); run(); return; }
-    started = true;
-    poll = setInterval(() => { if (document.visibilityState === 'visible') run(); }, 20000);
-    window.addEventListener('online', () => run());
-    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') run(); });
-    run();
+    poll = setInterval(() => { if (document.visibilityState === 'visible' && due()) run(); }, 10 * 60 * 1000);
+    if (!started) {
+      started = true;
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && due()) run(); });
+    }
+    run(); // once when the app opens / signs in
   }
   return { cfg, session, isCloud, signIn, signUp, signOut, orgs, createOrg, members, addMember, removeMember, run, schedule, start, setStatus, get status() { return status; }, get msg() { return msg; } };
 })();
