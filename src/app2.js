@@ -111,7 +111,7 @@ function vHome() {
       <p class="muted" style="margin-top:0">Measurement, quantity abstract, RAB bill and invoice for your contractor clients – synced between your Android phone and Mac, exported to Excel in the RAB format.</p>
       <div class="row"><button class="btn p" data-act="newContractor">+ Add first contractor</button>
       <button class="btn" data-act="importFile">Import starter data / backup (.json)</button></div>
-      <p class="small muted">Tip: import <b>CG_Aria_seed.json</b> to load Sathya Enterprises → Casa Grand Aria with all items, rates and the billed-to-date totals up to RAB 045.</p></div>` };
+      <p class="small muted">Tip: import your starter file (.json) to load contractors and projects with their items, rates and billed-to-date totals.</p></div>` };
   }
   const rows = bs.map(billRow);
   const live = rows.filter((x) => !['Draft', 'Cancelled'].includes(x.b.status));
@@ -191,7 +191,7 @@ function vContractor(r) {
         ${fld('Address', c, 'address', { textarea: true })}
         <div class="grid">${fld('PAN', c, 'pan')}${fld('Phone', c, 'phone')}</div>
         ${fld('Email', c, 'email', { type: 'email' })}
-        <div class="grid g2">${fld('Invoice no. prefix', c, 'invPrefix', { ph: 'SE/26-27/' })}${fld('Next invoice no.', c, 'nextInvNo', { num: true })}</div>
+        <div class="grid g2">${fld('Invoice no. prefix', c, 'invPrefix', { ph: 'e.g. ABC/26-27/' })}${fld('Next invoice no.', c, 'nextInvNo', { num: true })}</div>
       </div>
       <div class="row" style="margin-top:12px"><span class="sp"></span><button class="btn d sm" data-act="delContractor" data-id="${c.id}">Delete contractor</button></div>
     </div>` };
@@ -203,7 +203,7 @@ ACT.delContractor = async (el) => {
 ACT.newProject = async (el) => {
   const ps = projects();
   const r = await dialog('New project', `
-    <div class="grid"><label class="f">Project name<input name="name" type="text" placeholder="e.g. CASA GRAND ARIA"></label>
+    <div class="grid"><label class="f">Project name<input name="name" type="text" placeholder="e.g. Green Park Towers"></label>
     <label class="f">Start from<select name="from"><option value="">Blank painting template (categories only)</option>${ps.map((p) => `<option value="${p.id}">Copy items, rates & blocks from ${esc(p.name)}</option>`).join('')}</select></label>
     <label class="f">Blocks / towers (comma separated)<input name="blocks" type="text" value="Block - 1"></label></div>`, [['cancel', 'Cancel'], ['ok', 'Create', 'p']]);
   if (r.action !== 'ok' || !r.values.name.trim()) return;

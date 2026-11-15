@@ -186,7 +186,7 @@ function vSection(r) {
     <div class="grid g2">
       <div class="card"><h2>Totals${N(raw.mult) > 1 ? ` (× ${esc(raw.mult)})` : ''}</h2>${usedCats.length ? `<div class="tw"><table class="t"><tbody>${usedCats.map((k) => `<tr><td>${esc((cm[k] || {}).name || k)}</td><td class="n"><b>${qf(tot[k])}</b></td><td>${esc((cm[k] || {}).unit || '')}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">–</div>'}</div>
       <div class="card"><h2>Billed before this app (%)</h2>
-        <p class="small muted" style="margin-top:-6px">Work billed outside the app (CG Aria: up to RAB 045, imported from your quantity abstracts). Bills made in the app track progress automatically.</p>
+        <p class="small muted" style="margin-top:-6px">Work billed outside the app (e.g. up to the last RAB before you started using it). Bills made in the app track progress automatically.</p>
         ${raw.isTemplate ? '<div class="empty">Not used for templates.</div>' : usedCats.map((k) => `<div class="small" style="font-weight:600;margin:8px 0 4px">${esc((cm[k] || {}).name || k)}</div><div class="grid g3">${(ibc[k] || []).map((it) => `<label class="f">${esc(it.desc.replace(/^Painting\s*/, ''))}<input type="number" step="any" min="0" max="100" value="${esc((raw.openingPct || {})[it.id] === undefined ? '' : +(+raw.openingPct[it.id]).toFixed(2))}" data-ch="openPct" data-s="${raw.id}" data-w="${it.id}" data-k="op${it.id}"></label>`).join('')}</div>`).join('') || '<div class="empty">Add measurements first.</div>'}
       </div>
     </div>
