@@ -42,7 +42,7 @@ a{color:var(--brand2)}
 #top{position:sticky;top:0;z-index:20;background:var(--card);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;padding:10px 16px;padding-top:max(10px,env(safe-area-inset-top))}
 #top h1{font-size:17px;margin:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #top .sub{font-size:12px;color:var(--muted);font-weight:400}
-#back{display:none}
+#back{display:inline-flex;font-size:18px;padding:4px 10px}
 #sync{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer;padding:4px 8px;border-radius:20px;background:var(--soft)}
 #sync i{width:8px;height:8px;border-radius:50%;background:#9aa5ae;display:inline-block}
 #sync.ok i{background:var(--ok)} #sync.busy i{background:var(--warn)} #sync.err i{background:var(--bad)}
@@ -54,7 +54,6 @@ main{padding:16px;max-width:1280px;width:100%;margin:0 auto;padding-bottom:90px}
   #bnav a{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 0 7px;font-size:11px;color:var(--muted);text-decoration:none}
   #bnav a.on{color:var(--brand2);font-weight:600}
   main{padding:12px;padding-bottom:96px}
-  #back{display:inline-flex}
 }
 /* components */
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin-bottom:14px}
@@ -85,6 +84,8 @@ textarea{resize:vertical}
 .tabs a{padding:9px 13px;text-decoration:none;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap;font-weight:500}
 .tabs a.on{color:var(--brand2);border-bottom-color:var(--brand2)}
 .chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.chips.blocks{position:sticky;top:var(--topH,52px);z-index:15;background:var(--bg);margin:0 -16px 10px;padding:10px 16px;border-bottom:1px solid var(--line);box-shadow:0 4px 8px -6px rgba(0,0,0,.15)}
+@media (max-width:860px){.chips.blocks{margin:0 -12px 10px;padding:8px 12px}}
 .chip{border:1px solid var(--line);background:#fff;border-radius:20px;padding:5px 11px;font-size:12px;cursor:pointer}
 .chip.on{background:var(--brand2);color:#fff;border-color:var(--brand2)}
 .list .it{display:flex;align-items:center;gap:12px;padding:12px 4px;border-bottom:1px solid var(--line);cursor:pointer;text-decoration:none;color:inherit}

@@ -32,7 +32,7 @@ function filterBar(st, p, blk, secs, opts) {
     ${o.series.length ? sel('series', 'All series', o.series) : ''}
     ${o.floors.length ? sel('floor', 'All floors', o.floors) : ''}
     ${opts && opts.kind ? `<select data-ch="lf" data-st="${st}" data-f="kind" style="max-width:150px"><option value="">Flats & common</option><option value="flat" ${f.kind === 'flat' ? 'selected' : ''}>Flats only</option><option value="common" ${f.kind === 'common' ? 'selected' : ''}>Common areas</option><option value="template" ${f.kind === 'template' ? 'selected' : ''}>Typical templates</option></select>` : ''}
-    <input type="search" placeholder="Search name…" value="${esc(f.q || '')}" data-ch="lf" data-st="${st}" data-f="q" style="max-width:190px">
+    <input type="search" placeholder="Search name…" value="${esc(f.q || '')}" data-ch="lf" data-st="${st}" data-f="q" data-live data-k="search-${st}" style="max-width:190px">
     ${active ? `<button class="btn sm ghost" data-act="lfClear" data-st="${st}">Clear filters</button>` : ''}
   </div>`;
 }

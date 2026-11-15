@@ -63,12 +63,22 @@ function render() {
   let out;
   try { out = fn(r); } catch (e) { console.error(e); out = { title: 'Error', html: `<div class="warnbox">Something went wrong: ${esc(e.message)}</div>` }; }
   $('#title').innerHTML = out.title || 'Aarush Estimation';
-  $('#back').style.visibility = out.back ? 'visible' : 'hidden';
-  $('#back').onclick = () => (out.back ? go(out.back) : history.back());
+  // Back on every page: explicit parent if the view gives one, otherwise Home
+  const backTo = out.back || (r.name === 'home' ? null : 'home');
+  $('#back').style.visibility = backTo ? 'visible' : 'hidden';
+  $('#back').onclick = () => { if (backTo) go(backTo); };
   $('#main').innerHTML = out.html;
   if (render._last === location.hash) { window.scrollTo(0, scroll); $$('.tw').forEach((e, i) => { if (tw[i]) { e.scrollLeft = tw[i][0]; e.scrollTop = tw[i][1]; } }); }
   render._last = location.hash;
-  if (focusKey) { const el = $(`[data-k="${CSS.escape(focusKey)}"]`); if (el) { el.focus(); if (el.select && el.type !== 'date') try { el.select(); } catch (e) { /* */ } } }
+  if (focusKey) {
+    const el = $(`[data-k="${CSS.escape(focusKey)}"]`);
+    if (el) {
+      el.focus();
+      if (el.type === 'search' || el.dataset.live !== undefined) { const n = el.value.length; try { el.setSelectionRange(n, n); } catch (e) { /* */ } }
+      else if (el.select && el.type !== 'date') try { el.select(); } catch (e) { /* */ }
+    }
+  }
+  const th = $('#top'); if (th) document.documentElement.style.setProperty('--topH', th.offsetHeight + 'px');
   Sync.setStatus(Sync.isCloud() ? (Sync.status === 'local' ? 'busy' : Sync.status) : 'local', Sync.msg);
   if (r.name === 'settings') loadMembers();
 }
@@ -80,6 +90,14 @@ document.addEventListener('focusout', () => { if (onRemoteChange.pending) { onRe
 const ACT = {}; const CH = {};
 document.addEventListener('click', (e) => { const el = e.target.closest('[data-act]'); if (!el) return; e.preventDefault(); const f = ACT[el.dataset.act]; if (f) Promise.resolve(f(el, e)).catch((er) => { console.error(er); toast(er.message || String(er), 4000); }); });
 document.addEventListener('change', (e) => { const el = e.target.closest('[data-ch]'); if (!el) return; const f = CH[el.dataset.ch]; if (f) Promise.resolve(f(el, e)).catch((er) => { console.error(er); toast(er.message || String(er), 4000); }); });
+let liveTimer = null;
+document.addEventListener('input', (e) => {
+  const el = e.target.closest('[data-live]'); if (!el) return;
+  clearTimeout(liveTimer);
+  liveTimer = setTimeout(() => { const f = CH[el.dataset.ch]; if (f) f(el); }, 200);
+});
+document.addEventListener('change', (e) => { if (e.target.closest('[data-live]')) e.stopImmediatePropagation(); }, true);
+window.addEventListener('resize', () => { const th = $('#top'); if (th) document.documentElement.style.setProperty('--topH', th.offsetHeight + 'px'); });
 $('#sync').addEventListener('click', () => { if (Sync.isCloud()) { Sync.run(); toast(Sync.msg || 'Syncing…'); } else go('settings'); });
 
 /* generic field binding: data-ch="f" data-id data-path [data-type=num|bool] [data-rr] */
@@ -152,7 +170,7 @@ function vBills() {
       <div class="row" style="margin-bottom:10px">
         <select data-ch="bf" data-k="bf-c" data-f="c" style="max-width:220px"><option value="">All contractors</option>${contractors().map((c) => `<option value="${c.id}" ${f.c === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>
         <select data-ch="bf" data-f="s" style="max-width:150px"><option value="">All status</option>${STATUSES.map((s) => `<option ${f.s === s ? 'selected' : ''}>${s}</option>`).join('')}</select>
-        <input type="search" placeholder="Search RAB, invoice, project…" data-ch="bf" data-f="q" value="${esc(f.q)}" style="max-width:260px">
+        <input type="search" placeholder="Search RAB, invoice, project…" data-ch="bf" data-f="q" data-live data-k="search-bills" value="${esc(f.q)}" style="max-width:260px">
         <span class="sp"></span>
         <button class="btn" data-act="exportTracker">Export to Excel</button>
         <button class="btn p" data-act="newBillPick">+ New bill</button>
@@ -261,7 +279,7 @@ function createBill(pid) {
 function blockChips(p, key, extra) {
   const cur = UI[key][p.id] || (extra ? extra[0][0] : (p.blocks[0] || {}).id);
   const opts = (extra || []).concat((p.blocks || []).map((b) => [b.id, b.name]));
-  return { cur, html: `<div class="chips">${opts.map(([id, n]) => `<button class="chip ${id === cur ? 'on' : ''}" data-act="ui" data-key="${key}" data-p="${p.id}" data-v="${id}">${esc(n)}</button>`).join('')}</div>` };
+  return { cur, html: `<div class="chips blocks">${opts.map(([id, n]) => `<button class="chip ${id === cur ? 'on' : ''}" data-act="ui" data-key="${key}" data-p="${p.id}" data-v="${id}">${esc(n)}</button>`).join('')}</div>` };
 }
 ACT.ui = (el) => { UI[el.dataset.key][el.dataset.p] = el.dataset.v; render(); };
 const sortSecs = (a, b) => (N(a.order) || 0) - (N(b.order) || 0) || String(a.name).localeCompare(String(b.name), undefined, { numeric: true });
