@@ -1,6 +1,6 @@
 /* Aarush Estimation – app core: utilities, local store, cloud sync */
 'use strict';
-const APP_VERSION = '1.7.4';
+const APP_VERSION = '1.7.5';
 const $ = (s, el) => (el || document).querySelector(s);
 const $$ = (s, el) => Array.from((el || document).querySelectorAll(s));
 const esc = (s) => String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -50,6 +50,11 @@ async function promptBox(title, label, value) {
 const Store = (() => {
   let db = null; const recs = new Map(); const meta = {}; let ws = 'local';
   const listeners = [];
+  // last saved state of every record (as text), so a change can be undone even though screens edit the objects in place
+  const snap = new Map(); let writeHook = null;
+  const NOSNAP = new Set(['tpl', 'tplpart']);
+  const snapOf = (r) => JSON.stringify({ d: r.data, x: !!r.deleted });
+  function noted(r) { if (NOSNAP.has(r.kind)) return; const before = snap.has(r.id) ? snap.get(r.id) : null; const after = snapOf(r); snap.set(r.id, after); if (writeHook) writeHook(r.kind, r.id, before, after); }
   function open() {
     return new Promise((res, rej) => {
       const rq = indexedDB.open('aarush-estimation', 1);
@@ -73,6 +78,8 @@ const Store = (() => {
   async function loadWs() {
     recs.clear();
     (await all('recs')).filter((r) => r.ws === ws).forEach((r) => recs.set(r.id, r));
+    snap.clear(); recs.forEach((r) => { if (!NOSNAP.has(r.kind)) snap.set(r.id, snapOf(r)); });
+    if (writeHook) writeHook(null); // a new workspace: forget undo history
   }
   function persist(r) { try { tx('recs', 'readwrite').put(r); } catch (e) { console.error(e); } }
   function setMeta(k, v) { meta[k] = v; try { tx('meta', 'readwrite').put({ k, v }); } catch (e) { console.error(e); } }
@@ -83,7 +90,7 @@ const Store = (() => {
   function put(kind, data, opts) {
     if (!data.id) data.id = uid(kind[0]);
     const r = { ws, id: data.id, kind, data, updated_at: new Date().toISOString(), deleted: false, dirty: true };
-    recs.set(r.id, r); persist(r);
+    recs.set(r.id, r); persist(r); noted(r);
     if (!(opts && opts.silent)) listeners.forEach((f) => f(r));
     return data;
   }
@@ -91,14 +98,14 @@ const Store = (() => {
   function putMany(list) {
     return new Promise((res, rej) => {
       const t = db.transaction('recs', 'readwrite'); const st = t.objectStore('recs'); const now = new Date().toISOString();
-      list.forEach(({ kind, data }) => { const r = { ws, id: data.id, kind, data, updated_at: now, deleted: false, dirty: true }; recs.set(r.id, r); st.put(r); });
+      list.forEach(({ kind, data }) => { const r = { ws, id: data.id, kind, data, updated_at: now, deleted: false, dirty: true }; recs.set(r.id, r); st.put(r); noted(r); });
       t.oncomplete = () => { listeners.forEach((f) => f(null)); res(list.length); };
       t.onerror = () => rej(t.error); t.onabort = () => rej(t.error || new Error('Save aborted'));
     });
   }
   function remove(id) {
     const r = recs.get(id); if (!r) return;
-    r.deleted = true; r.dirty = true; r.updated_at = new Date().toISOString(); persist(r);
+    r.deleted = true; r.dirty = true; r.updated_at = new Date().toISOString(); persist(r); noted(r);
     listeners.forEach((f) => f(r));
   }
   /** Apply a record coming from the server */
@@ -106,7 +113,7 @@ const Store = (() => {
     const cur = recs.get(row.id);
     if (cur && cur.dirty && cur.updated_at > row.updated_at) return false;
     const r = { ws, id: row.id, kind: row.kind, data: row.data, updated_at: row.updated_at, deleted: !!row.deleted, dirty: false };
-    recs.set(r.id, r); persist(r); return true;
+    recs.set(r.id, r); persist(r); if (!NOSNAP.has(r.kind)) snap.set(r.id, snapOf(r)); return true;
   }
   function applyRemoteMany(rows) {
     return new Promise((res, rej) => {
@@ -116,7 +123,7 @@ const Store = (() => {
         const cur = recs.get(row.id);
         if (cur && cur.dirty && cur.updated_at > row.updated_at) return;
         const r = { ws, id: row.id, kind: row.kind, data: row.data, updated_at: row.updated_at, deleted: !!row.deleted, dirty: false };
-        recs.set(r.id, r); st.put(r); changed = true;
+        recs.set(r.id, r); st.put(r); changed = true; if (!NOSNAP.has(r.kind)) snap.set(r.id, snapOf(r));
       });
       t.oncomplete = () => res(changed); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error || new Error('Save aborted'));
     });
@@ -127,12 +134,12 @@ const Store = (() => {
   /** Copy all records of one workspace into the current one (used when moving local data to the cloud) */
   async function adoptFrom(otherWs) {
     const rows = (await all('recs')).filter((r) => r.ws === otherWs && !r.deleted);
-    rows.forEach((r) => { const n = Object.assign({}, r, { ws, dirty: true, updated_at: new Date().toISOString() }); recs.set(n.id, n); persist(n); });
+    rows.forEach((r) => { const n = Object.assign({}, r, { ws, dirty: true, updated_at: new Date().toISOString() }); recs.set(n.id, n); persist(n); if (!NOSNAP.has(n.kind)) snap.set(n.id, snapOf(n)); });
     return rows.length;
   }
   async function countWs(w) { return (await all('recs')).filter((r) => r.ws === w && !r.deleted).length; }
   function exportAll() { const out = []; recs.forEach((r) => { if (!r.deleted) out.push({ id: r.id, kind: r.kind, data: r.data, updated_at: r.updated_at }); }); return out; }
-  return { init, list, get, rec, put, putMany, remove, applyRemote, applyRemoteMany, dirty, markClean, setMeta, getMeta, switchWs, adoptFrom, countWs, exportAll, onChange: (f) => listeners.push(f), get ws() { return ws; } };
+  return { init, list, get, rec, put, putMany, remove, applyRemote, applyRemoteMany, dirty, markClean, setMeta, getMeta, switchWs, adoptFrom, countWs, exportAll, onChange: (f) => listeners.push(f), onWrite: (f) => { writeHook = f; }, get ws() { return ws; } };
 })();
 
 /* ================= Cloud sync (Supabase REST) ================= */
