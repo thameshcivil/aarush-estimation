@@ -9,7 +9,7 @@ def scr(path):
 h = open('src/index.html', encoding='utf-8').read()
 h = h.replace('<!--EXCELJS-->', scr('node_modules/exceljs/dist/exceljs.min.js'))
 h = h.replace('<!--CALC-->', scr('src/calc.js')).replace('<!--EXCEL-->', scr('src/excel.js'))
-h = h.replace('<!--APP-->', '\n'.join(scr('src/%s.js' % f) for f in ('app1', 'app2', 'app3', 'boot')))
+h = h.replace('<!--APP-->', '\n'.join(scr('src/%s.js' % f) for f in ('app1', 'app2', 'app3', 'app4', 'boot')))
 open(OUT + '/index.html', 'w', encoding='utf-8').write(h)
 for f in os.listdir('assets'):
     shutil.copy('assets/' + f, OUT + '/' + f)

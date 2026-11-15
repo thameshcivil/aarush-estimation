@@ -342,9 +342,9 @@ ACT.pasteSections = async (el) => {
 /* ---------- items & rates ---------- */
 function pRates(p) {
   const t = UI.rateTab;
-  const sub = [['items', 'Items & rates'], ['versions', 'Rate versions (WO revisions)'], ['opening', 'Opening balance'], ['cats', 'Measurement categories']];
+  const sub = [['items', 'Items & rates'], ['versions', 'Rate versions (WO revisions)'], ['links', 'Linked progress'], ['opening', 'Opening balance'], ['cats', 'Measurement categories']];
   const chips = `<div class="chips">${sub.map(([k, l]) => `<button class="chip ${k === t ? 'on' : ''}" data-act="rateTab" data-v="${k}">${l}</button>`).join('')}</div>`;
-  return chips + ({ items: rItems, versions: rVersions, opening: rOpening, cats: rCats }[t])(p);
+  return chips + ({ items: rItems, versions: rVersions, links: rLinks, opening: rOpening, cats: rCats }[t])(p);
 }
 ACT.rateTab = (el) => { UI.rateTab = el.dataset.v; render(); };
 const versionsSorted = (p) => (p.versions || []).slice().sort((a, b) => String(a.date).localeCompare(String(b.date)) || (a.mergeInto ? 1 : 0) - (b.mergeInto ? 1 : 0));
