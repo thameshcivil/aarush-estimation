@@ -214,6 +214,36 @@ function progressRows(p, blockId, cat) {
   return sectionsOf(p.id).filter((s) => s.blockId === blockId && !s.isTemplate && locMatch(s, blk, UI.pf))
     .map((s) => [s, Calc.sectionTotals(s, p)]).filter(([, t]) => t[cat] !== undefined).sort((a, b) => secSort(a[0], b[0]));
 }
+/* category groups: Internal, Shaft / OTS / Duct, External (set per category in Measurement categories; Auto by name) */
+const ZONES = { int: 'Internal', shaft: 'Shaft / OTS / Duct', ext: 'External' };
+function zoneOf(c) { if (c && c.zone && ZONES[c.zone]) return c.zone; const n = String((c && c.name) || ''); if (/external/i.test(n)) return 'ext'; if (/shaft|\bots\b|duct/i.test(n)) return 'shaft'; return 'int'; }
+function zoneChips(catIds, cm, cur, p) {
+  return Object.keys(ZONES).map((z) => { const ks = catIds.filter((k) => zoneOf(cm[k]) === z); if (!ks.length) return '';
+    return `<div class="zone z-${z}"><div class="zl">${ZONES[z]}</div><div class="chips">${ks.map((k) => `<button class="chip ${k === cur ? 'on' : ''}" data-act="ui" data-key="cat" data-p="${p.id}" data-v="${k}">${esc(((cm[k] || {}).name || k).replace(/^(Internal|External)\s+/i, '').replace(/^./, (ch) => ch.toUpperCase()))}</button>`).join('')}</div></div>`; }).join('');
+}
+/* ▾ next to a location: every item of the same group (Internal / Shaft / External) for that location */
+UI.xp = UI.xp || {};
+ACT.xpand = (el) => { const k = el.dataset.s; if (UI.xp[k]) delete UI.xp[k]; else UI.xp[k] = 1; render(); };
+function zonePanel(b, p, s, zone, sorted, ed, ibc, cm, cols) {
+  const tot = Calc.sectionTotals(s, p);
+  const cats = Object.keys(tot).filter((k) => (ibc[k] || []).length && zoneOf(cm[k]) === zone);
+  if (!cats.length) return `<tr class="xrow"><td colspan="${cols}" class="small muted">No ${ZONES[zone]} items measured here.</td></tr>`;
+  const vr = ((p.versions || []).find((v) => v.id === b.versionId) || { rates: {} }).rates;
+  const blocks = cats.map((k) => `<div class="xcat"><div class="xh"><b>${esc((cm[k] || {}).name || k)}</b> <span class="small muted">${qf(tot[k])} ${esc((cm[k] || {}).unit || '')}</span></div><div class="xits">
+    ${ibc[k].map((it) => { const pv = Calc.prevPct(s, it.id, b, sorted); const cv = Calc.curPct(s, it.id, b, sorted); const has = b.progress && b.progress[s.id] && b.progress[s.id][it.id] !== undefined; const lnk = has && b.linked && b.linked[s.id] && b.linked[s.id][it.id];
+      return `<label class="xit"><span>${esc(it.desc.replace(/^Painting\s*/, '').replace(/^\{[^}]*\}\s*-\s*/, ''))}${vr[it.id] === undefined ? ' <i style="color:var(--bad)">no rate</i>' : ''}</span><input class="num" type="number" step="any" min="0" max="100" style="width:66px;${lnk ? 'background:#e8f1fb;color:#1d5f99;font-weight:600' : has && cv !== pv ? 'background:#eaf6ee;font-weight:600' : ''}" value="${has ? esc(+cv.toFixed(2)) : ''}" placeholder="${+pv.toFixed(1)}" ${ed ? '' : 'disabled'} data-ch="pct" data-b="${b.id}" data-s="${s.id}" data-w="${it.id}" data-k="x${s.id}${it.id}"><small>prev ${+pv.toFixed(1)}%</small></label>`; }).join('')}</div></div>`).join('');
+  const all = ed ? `<div class="xall"><span class="small">Set every ${ZONES[zone]} coat here to</span><input class="num" style="width:66px" type="number" step="any" min="0" max="100" placeholder="%" data-k="xa${s.id}"><button class="btn sm" data-act="xpAll" data-b="${b.id}" data-s="${s.id}" data-z="${zone}">Apply</button><span class="small muted">(coats already above stay)</span></div>` : '';
+  return `<tr class="xrow"><td colspan="${cols}"><div class="xwrap"><div class="small muted" style="margin-bottom:6px">All ${ZONES[zone]} items – ${esc(s.name)}</div>${all}${blocks}</div></td></tr>`;
+}
+ACT.xpAll = (el) => {
+  const b = Store.get(el.dataset.b); const s = Store.get(el.dataset.s); const p = proj(b.projectId);
+  const inp = $(`[data-k="xa${s.id}"]`); const raw = inp ? inp.value.trim() : ''; if (raw === '') return toast('Enter a %');
+  const v = N(raw); if (v < 0 || v > 100) return toast('Enter 0 – 100');
+  const ibc = itemsByCatUI(p); const cm = Calc.catMap(p); const sorted = Calc.sortedBills(billsOf(p.id), p.id); const tot = Calc.sectionTotals(s, p);
+  b.progress = b.progress || {}; const sp = (b.progress[s.id] = b.progress[s.id] || {}); let n = 0;
+  Object.keys(tot).filter((k) => zoneOf(cm[k]) === el.dataset.z).forEach((k) => (ibc[k] || []).forEach((it) => { if (Calc.prevPct(s, it.id, b, sorted) <= v) { sp[it.id] = v; n++; } }));
+  Store.put('bill', b); render(); toast(`${n} coat(s) set to ${v}%`);
+};
 function bProgress(b, p, c, res, ed) {
   if (!(p.blocks || []).length) return '<div class="empty">No blocks.</div>';
   const bc = blockChips(p, 'block'); const blk = blockOf(p, bc.cur); const cm = Calc.catMap(p); const ibc = itemsByCatUI(p);
@@ -229,11 +259,12 @@ function bProgress(b, p, c, res, ed) {
   let lastF = null;
   const body = rows.slice(0, LIMIT).map(([s, t]) => {
     const head = s.floor !== lastF ? floorHead(2 + its.length, s.floor) : ''; lastF = s.floor;
-    return head + `<tr><td class="stick"><a href="#/section/${s.id}">${esc(s.name)}</a><div class="small muted">${esc(Calc.sectionPore(s, blk))}${s.series ? ' · S' + esc(p2(s.series)) : ''}</div></td><td class="n">${qf(t[cur])}</td>
-    ${its.map((it) => { const pv = Calc.prevPct(s, it.id, b, sorted); const cv = Calc.curPct(s, it.id, b, sorted); const has = b.progress && b.progress[s.id] && b.progress[s.id][it.id] !== undefined; const lnk = has && b.linked && b.linked[s.id] && b.linked[s.id][it.id]; return `<td class="n pct"><input class="num" title="${lnk ? 'Filled from the linked master coat – type to override' : ''}" style="width:62px;${lnk ? 'background:#e8f1fb;color:#1d5f99;font-weight:600' : has && cv !== pv ? 'background:#eaf6ee;font-weight:600' : ''}" type="number" step="any" min="0" max="100" value="${has ? esc(+cv.toFixed(2)) : ''}" placeholder="${+pv.toFixed(1)}" ${ed ? '' : 'disabled'} data-ch="pct" data-b="${b.id}" data-s="${s.id}" data-w="${it.id}" data-k="p${s.id}${it.id}"><small>${lnk ? '🔗 ' : ''}prev ${+pv.toFixed(1)}%</small></td>`; }).join('')}</tr>`;
+    const xo = !!UI.xp[s.id];
+    return head + `<tr${xo ? ' class="xon"' : ''}><td class="stick"><button class="xbtn" data-act="xpand" data-s="${s.id}" title="All ${ZONES[zoneOf(cm[cur])]} items of this location">${xo ? '▴' : '▾'}</button><a href="#/section/${s.id}">${esc(s.name)}</a><div class="small muted">${esc(Calc.sectionPore(s, blk))}${s.series ? ' · S' + esc(p2(s.series)) : ''}</div></td><td class="n">${qf(t[cur])}</td>
+    ${its.map((it) => { const pv = Calc.prevPct(s, it.id, b, sorted); const cv = Calc.curPct(s, it.id, b, sorted); const has = b.progress && b.progress[s.id] && b.progress[s.id][it.id] !== undefined; const lnk = has && b.linked && b.linked[s.id] && b.linked[s.id][it.id]; return `<td class="n pct"><input class="num" title="${lnk ? 'Filled from the linked master coat – type to override' : ''}" style="width:62px;${lnk ? 'background:#e8f1fb;color:#1d5f99;font-weight:600' : has && cv !== pv ? 'background:#eaf6ee;font-weight:600' : ''}" type="number" step="any" min="0" max="100" value="${has ? esc(+cv.toFixed(2)) : ''}" placeholder="${+pv.toFixed(1)}" ${ed ? '' : 'disabled'} data-ch="pct" data-b="${b.id}" data-s="${s.id}" data-w="${it.id}" data-k="p${s.id}${it.id}"><small>${lnk ? '🔗 ' : ''}prev ${+pv.toFixed(1)}%</small></td>`; }).join('')}</tr>` + (xo ? zonePanel(b, p, s, zoneOf(cm[cur]), sorted, ed, ibc, cm, 2 + its.length) : '');
   }).join('');
   const bulk = ed ? `<tr style="background:#fbfcfd"><td class="stick small"><b>Set for all ${rows.length} shown</b><div class="muted">blank = clear</div></td><td></td>${its.map((it) => `<td class="n"><input class="num" style="width:56px" type="number" step="any" min="0" max="100" data-k="bulk${it.id}" placeholder="%"><div><a href="#" class="small" data-act="pctBulk" data-b="${b.id}" data-p="${p.id}" data-bl="${bc.cur}" data-c="${cur}" data-w="${it.id}">apply</a></div></td>`).join('')}</tr>` : '';
-  return bc.html + `<div class="chips">${catIds.map((k) => `<button class="chip ${k === cur ? 'on' : ''}" data-act="ui" data-key="cat" data-p="${p.id}" data-v="${k}">${esc((cm[k] || {}).name || k)}</button>`).join('')}</div>${oldNote}
+  return bc.html + `<div class="zones">${zoneChips(catIds, cm, cur, p)}</div>${oldNote}
   <div class="card"><h2>Cumulative % complete – ${esc((cm[cur] || {}).name || cur)} <span class="small muted">(${esc((cm[cur] || {}).unit || '')})</span></h2>
   <p class="small muted" style="margin-top:-6px">Enter cumulative % done up to this bill. Blank = same as previous bill. Filter by pore, series or floor, then use “Set for all shown” to fill a whole pore, series or floor at once.
   ${(p.links || []).length ? `<span style="color:#1d5f99">🔗 Blue cells are filled from linked master coats (Items &amp; Rates → Linked progress); type over one to override it.</span> ${ed ? `<a href="#" data-act="relink" data-b="${b.id}">Re-apply links</a>` : ''}` : `Tip: set up <a href="#/project/${p.id}/rates" data-act="goLinks">linked progress</a> so Wall, Door, Grill… fill from Internal Ceiling.`}</p>

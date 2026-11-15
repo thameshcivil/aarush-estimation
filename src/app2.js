@@ -482,9 +482,10 @@ CH.opq = (el) => {
 };
 function rCats(p) {
   return `<div class="card"><h2>Measurement categories<span class="sp"></span><button class="btn sm p" data-act="catAdd" data-p="${p.id}">+ Category</button></h2>
-  <p class="small muted" style="margin-top:-6px">Measurements are entered in metres. Area categories convert m² → SqFt (× 10.7639), length categories convert m → Rft (× 3.28084).</p>
-  <div class="tw"><table class="t"><thead><tr><th>Name</th><th>Billing unit</th><th>Measured as</th><th class="n">Default MF</th><th class="n">Items</th></tr></thead><tbody>
+  <p class="small muted" style="margin-top:-6px"><b>Group</b> sorts the categories on the bill screens into Internal, Shaft / OTS / Duct and External (Auto: by the name). Measurements are entered in metres. Area categories convert m² → SqFt (× 10.7639), length categories convert m → Rft (× 3.28084).</p>
+  <div class="tw"><table class="t"><thead><tr><th>Name</th><th>Group</th><th>Billing unit</th><th>Measured as</th><th class="n">Default MF</th><th class="n">Items</th></tr></thead><tbody>
   ${p.categories.map((c, i) => `<tr><td><input type="text" style="min-width:240px" value="${esc(c.name)}" data-ch="cat" data-p="${p.id}" data-i="${i}" data-f="name"></td>
+  <td><select data-ch="cat" data-p="${p.id}" data-i="${i}" data-f="zone"><option value="" ${!c.zone ? 'selected' : ''}>Auto (${ZONES[zoneOf(Object.assign({}, c, { zone: '' }))]})</option>${Object.keys(ZONES).map((z) => `<option value="${z}" ${c.zone === z ? 'selected' : ''}>${ZONES[z]}</option>`).join('')}</select></td>
   <td><select data-ch="cat" data-p="${p.id}" data-i="${i}" data-f="unit">${['SqFt', 'Rft', 'Nos', 'SqM', 'Rmt'].map((u) => `<option ${u === c.unit ? 'selected' : ''}>${u}</option>`).join('')}</select></td>
   <td><select data-ch="cat" data-p="${p.id}" data-i="${i}" data-f="input"><option value="m2" ${c.input === 'm2' ? 'selected' : ''}>Area (m²)</option><option value="m" ${c.input === 'm' ? 'selected' : ''}>Length (m)</option><option value="nos" ${c.input === 'nos' ? 'selected' : ''}>Count (nos)</option></select></td>
   <td class="n"><input class="num" type="number" step="any" value="${esc(c.mf ?? '')}" data-ch="cat" data-p="${p.id}" data-i="${i}" data-f="mf"></td>
