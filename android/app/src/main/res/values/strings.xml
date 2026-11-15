@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Aarush Estimation</string>
+    <string name="title_activity_main">Aarush Estimation</string>
+    <string name="package_name">in.aarush.estimation</string>
+    <string name="custom_url_scheme">in.aarush.estimation</string>
+</resources>

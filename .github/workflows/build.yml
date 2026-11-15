@@ -1,0 +1,79 @@
+name: Build web app and Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Web app (GitHub Pages)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm ci
+      - run: python3 tools/build.py
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: www }
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
+  android:
+    name: Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17, cache: gradle }
+      - uses: android-actions/setup-android@v3
+      - run: npm ci
+      - run: python3 tools/build.py
+      - run: npx cap sync android
+      - name: Prepare signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/aarush.jks"
+            echo "AARUSH_KEYSTORE=$RUNNER_TEMP/aarush.jks" >> "$GITHUB_ENV"
+          fi
+          echo "AARUSH_VERSION_CODE=${{ github.run_number }}" >> "$GITHUB_ENV"
+      - name: Build APK
+        env:
+          AARUSH_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          if [ -n "$AARUSH_KEYSTORE" ]; then
+            ./gradlew assembleRelease --no-daemon
+            cp app/build/outputs/apk/release/app-release.apk ../Aarush-Estimation.apk
+          else
+            ./gradlew assembleDebug --no-daemon
+            cp app/build/outputs/apk/debug/app-debug.apk ../Aarush-Estimation.apk
+          fi
+      - uses: actions/upload-artifact@v4
+        with: { name: Aarush-Estimation-apk, path: Aarush-Estimation.apk }
+      - name: Publish as "latest" release (download link for your phone)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Aarush Estimation – latest Android build
+          body: |
+            Install on Android: open this page on your phone, tap **Aarush-Estimation.apk**, then allow "Install unknown apps" for your browser when asked.
+            Build ${{ github.run_number }} from ${{ github.sha }}.
+          files: Aarush-Estimation.apk
+          make_latest: true

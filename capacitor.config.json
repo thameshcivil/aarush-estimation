@@ -1,0 +1,7 @@
+{
+  "appId": "in.aarush.estimation",
+  "appName": "Aarush Estimation",
+  "webDir": "www",
+  "android": { "allowMixedContent": false },
+  "server": { "androidScheme": "https" }
+}
