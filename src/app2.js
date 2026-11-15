@@ -65,6 +65,7 @@ const go = (h) => { location.hash = '#/' + h; };
 let UI = { mf: {}, pf: {}, rep: {}, block: {}, cat: {}, absBlock: {}, rateTab: 'items', billFilter: { c: '', s: '', q: '' } };
 
 function render() {
+  if (typeof RECOVERY !== 'undefined' && RECOVERY && !RECOVERY.done) { $('#side').style.display = 'none'; $('#top').style.display = 'none'; $('#bnav').style.display = 'none'; return recoveryScreen(); }
   if (!Store.getMeta('mode')) return renderGate();
   if (Store.getMeta('mode') === 'cloud' && Store.ws === 'local') return renderGate();
   document.body.classList.remove('gate');
@@ -756,6 +757,7 @@ function renderGate() {
       <label class="f">Email<input type="email" id="g_email" autocomplete="username"></label>
       <label class="f">Password<input type="password" id="g_pw" autocomplete="current-password"></label>
       <div class="row"><button class="btn p" data-act="doSignIn" style="flex:1">Sign in</button><button class="btn" data-act="doSignUp" style="flex:1">Create account</button></div>
+      <p style="margin:10px 0 0;text-align:right"><a href="#" class="small" data-act="forgotPw">Forgot password?</a></p>
       <div id="g_msg" class="small"></div></div></div>
       <p style="text-align:center"><a href="#" data-act="gateBack" class="small">← Back</a></p></div>`;
   } else {
@@ -792,6 +794,43 @@ ACT.doSignUp = async () => {
   } catch (e) { m.innerHTML = `<span style="color:var(--bad)">${esc(e.message)}</span>`; }
 };
 ACT.signOutGate = async () => { await Sync.signOut(); render(); };
+/* ---------- forgotten password ---------- */
+const APP_WEB_URL = 'https://thameshcivil.github.io/aarush-estimation/';
+ACT.forgotPw = async () => {
+  gateCfg(); const m = $('#g_msg'); const email = $('#g_email').value.trim();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { m.innerHTML = '<span style="color:var(--bad)">Type your email above first, then tap “Forgot password?”</span>'; $('#g_email').focus(); return; }
+  m.textContent = 'Sending the reset link…';
+  try {
+    await Sync.recover(email, APP_WEB_URL);
+    m.innerHTML = `<span style="color:var(--ok)">If ${esc(email)} has an account, a reset link is on its way. Open the email (check Spam too) and tap the link – it opens this app in the browser, where you set a new password. Then sign in here with it.</span>`;
+  } catch (e) { m.innerHTML = `<span style="color:var(--bad)">${esc(e.message)}</span>${/rate|seconds/i.test(e.message) ? '<br>Wait a minute and try again.' : ''}`; }
+};
+/* the emailed link comes back as #access_token=…&type=recovery (or #error=… when it has expired) */
+const RECOVERY = (() => {
+  const h = location.hash || ''; if (!/access_token=|error_code=|error=/.test(h)) return null;
+  const q = new URLSearchParams(h.replace(/^#\/?/, ''));
+  history.replaceState(null, '', location.pathname + location.search + '#/home');
+  if (q.get('error') || q.get('error_code')) return { error: (q.get('error_description') || q.get('error') || 'The link is not valid').replace(/\+/g, ' ') };
+  if (q.get('type') !== 'recovery' && q.get('type') !== 'magiclink') return null;
+  return { access_token: q.get('access_token'), refresh_token: q.get('refresh_token'), expires_in: q.get('expires_in') };
+})();
+function recoveryScreen() {
+  const r = RECOVERY;
+  $('#main').innerHTML = `<div class="welcome"><div class="mark">A</div><h1>Set a new password</h1>
+    <div class="card">${r.error ? `<div class="warnbox">${esc(r.error)}. The link may have expired or been used already – go back and tap “Forgot password?” again.</div><button class="btn" data-act="recoveryDone">Back to sign in</button>` : `
+      <label class="f">New password<input type="password" id="r_pw" autocomplete="new-password"></label>
+      <label class="f">Type it again<input type="password" id="r_pw2" autocomplete="new-password"></label>
+      <button class="btn p" data-act="recoverySave" style="width:100%">Save new password</button><div id="r_msg" class="small" style="margin-top:8px"></div>`}</div></div>`;
+}
+ACT.recoverySave = async () => {
+  const m = $('#r_msg'); const a = $('#r_pw').value, b = $('#r_pw2').value;
+  if (a.length < 6) { m.innerHTML = '<span style="color:var(--bad)">At least 6 characters</span>'; return; }
+  if (a !== b) { m.innerHTML = '<span style="color:var(--bad)">The two passwords are not the same</span>'; return; }
+  m.textContent = 'Saving…';
+  try { await Sync.setNewPassword(RECOVERY, a); RECOVERY.done = true; Store.setMeta('gate', 'ws'); toast('Password changed – you are signed in', 4000); render(); }
+  catch (e) { m.innerHTML = `<span style="color:var(--bad)">${esc(e.message)}</span>`; }
+};
+ACT.recoveryDone = () => { RECOVERY.done = true; render(); };
 ACT.wsCreate = async () => {
   const name = $('#g_wsname').value.trim() || 'Aarush Estimation';
   const id = await Sync.createOrg(name);

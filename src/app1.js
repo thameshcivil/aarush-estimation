@@ -1,6 +1,6 @@
 /* Aarush Estimation – app core: utilities, local store, cloud sync */
 'use strict';
-const APP_VERSION = '1.7.6';
+const APP_VERSION = '1.7.7';
 const $ = (s, el) => (el || document).querySelector(s);
 const $$ = (s, el) => Array.from((el || document).querySelectorAll(s));
 const esc = (s) => String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -201,6 +201,15 @@ const Sync = (() => {
     if (b && b.access_token) { saveSession(b); Store.setMeta('mode', 'cloud'); return { signedIn: true }; }
     return { signedIn: false };
   }
+  /** forgotten password: Supabase emails a link back to this app, which then asks for a new password */
+  async function recover(email, redirectTo) {
+    await raw('/auth/v1/recover' + (redirectTo ? '?redirect_to=' + encodeURIComponent(redirectTo) : ''), { method: 'POST', body: JSON.stringify({ email, redirect_to: redirectTo }) });
+  }
+  async function setNewPassword(tok, password) {
+    const u = await raw('/auth/v1/user', { method: 'PUT', body: JSON.stringify({ password }) }, tok.access_token);
+    saveSession({ access_token: tok.access_token, refresh_token: tok.refresh_token, expires_in: +tok.expires_in || 3600, user: { id: u.id, email: u.email } });
+    Store.setMeta('mode', 'cloud'); return u;
+  }
   async function signOut() {
     try { await api('/auth/v1/logout', { method: 'POST' }); } catch (e) { /* ignore */ }
     Store.setMeta('session', null); Store.setMeta('mode', null); Store.setMeta('lastPull', null);
@@ -262,6 +271,6 @@ const Sync = (() => {
     }
     run(); // once when the app opens / signs in
   }
-  return { cfg, session, isCloud, signIn, signUp, signOut, orgs, createOrg, members, addMember, removeMember, run, schedule, start, setStatus, get status() { return status; }, get msg() { return msg; } };
+  return { cfg, session, isCloud, signIn, signUp, recover, setNewPassword, signOut, orgs, createOrg, members, addMember, removeMember, run, schedule, start, setStatus, get status() { return status; }, get msg() { return msg; } };
 })();
 Store.onChange(() => Sync.schedule());
