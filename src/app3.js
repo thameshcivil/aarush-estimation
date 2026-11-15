@@ -134,7 +134,7 @@ ACT.genFlats = async (el) => {
     });
   }
   B.floors.sort((a, b) => (floorNoOf(a, B) ?? 999) - (floorNoOf(b, B) ?? 999));
-  await Store.putMany(batch); Store.put('project', pr); CACHE = new Map(); Sync.schedule(300); render(); toast(n + ' flats created');
+  await Store.putMany(batch); Store.put('project', pr); resetCalc(); Sync.schedule(300); render(); toast(n + ' flats created');
 };
 
 /* ================= LOCATION (SECTION) EDITOR ================= */

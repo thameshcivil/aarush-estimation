@@ -103,7 +103,7 @@ CH.regF = (el) => { UI.reg[el.dataset.f] = el.type === 'checkbox' ? el.checked :
 CH.regStatus = (el) => {
   if (el.dataset.kind === 'bill') { const b = Store.get(el.dataset.id); b.status = el.value; Store.put('bill', b); }
   else { const x = Store.get(el.dataset.id); x.status = el.value; Store.put('regbill', x); }
-  if (typeof CACHE !== 'undefined') CACHE = new Map(); render();
+  render();
 };
 CH.regIssue = (el) => {
   const kind = el.dataset.kind === 'bill' ? 'bill' : 'regbill'; const x = Store.get(el.dataset.id); x.issue = el.value.trim(); Store.put(kind, x);
@@ -195,7 +195,7 @@ ACT.regImport = async () => {
     if (old) updated++; else added++;
     batch.push({ kind: 'regbill', data: rec });
   });
-  await Store.putMany(batch); if (typeof CACHE !== 'undefined') CACHE = new Map(); Sync.schedule(300);
+  await Store.putMany(batch); resetCalc(); Sync.schedule(300);
   UI.reg.c = cid; render();
   toast(`${matched} bills matched in the app · ${added} register entries added${updated ? ' · ' + updated + ' updated' : ''}`, 5000);
 };

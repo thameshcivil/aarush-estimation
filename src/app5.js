@@ -215,7 +215,7 @@ ACT.uploadBills = async (el) => {
     ${unmatched.length ? `<p class="small muted">Rows not matched to a location (skipped): ${unmatched.map(esc).join('; ')}</p>` : ''}
     <p class="small muted">Saved as billing history: each flat shows which RAB billed which coat. Billed-to-date amounts and new bills are not changed.</p>`, results.length ? [['cancel', 'Cancel'], ['ok', 'Save history', 'p']] : [['cancel', 'Close']]);
   if (ok.action !== 'ok') return;
-  await saveHistory(p, results); CACHE = new Map(); Sync.schedule(300); render(); toast(`${results.length} running bills saved`);
+  await saveHistory(p, results); resetCalc(); Sync.schedule(300); render(); toast(`${results.length} running bills saved`);
 };
 ACT.histDel = async (el) => {
   const h = Store.get(el.dataset.id); if (!h) return;

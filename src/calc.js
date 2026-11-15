@@ -98,14 +98,22 @@
   }
 
   /** Previous cumulative % for a section/work item just before `bill`. */
-  function prevPct(section, wi, bill, billsSorted) {
-    let best = null;
+  // index of the latest % per location/item before each bill, built once per sorted bill list (was a scan per lookup)
+  const pctIdx = new WeakMap();
+  function lastPcts(billsSorted, seq) {
+    let m = pctIdx.get(billsSorted); if (!m) { m = new Map(); pctIdx.set(billsSorted, m); }
+    let ix = m.get(seq); if (ix) return ix;
+    ix = new Map();
     for (const b of billsSorted) {
-      if (b.seq >= bill.seq) break;
-      if (b.status === 'Cancelled') continue;
-      const p = b.progress && b.progress[section.id];
-      if (p && p[wi] !== undefined && p[wi] !== null && p[wi] !== '') best = num(p[wi]);
+      if (b.seq >= seq) break;
+      if (b.status === 'Cancelled' || !b.progress) continue;
+      for (const sid in b.progress) { const p = b.progress[sid]; if (!p) continue; let o = ix.get(sid); for (const w in p) { const v = p[w]; if (v !== undefined && v !== null && v !== '') { if (!o) { o = {}; ix.set(sid, o); } o[w] = num(v); } } }
     }
+    m.set(seq, ix); return ix;
+  }
+  function prevPct(section, wi, bill, billsSorted) {
+    const lp = lastPcts(billsSorted, bill.seq).get(section.id);
+    const best = lp && lp[wi] !== undefined ? lp[wi] : null;
     if (best !== null) return best;
     const o = section.openingPct && section.openingPct[wi];
     return Math.min(100, num(o) || 0); // some workbooks billed above 100% – never carry more than 100% forward
@@ -162,13 +170,16 @@
   }
 
   /** Previous (opening + earlier bills) and this-bill quantity maps for a bill. */
-  function billState(project, sections, bills, bill) {
+  /** memo (optional): a Map the caller keeps, bill id -> that bill's own quantities, so earlier bills are not recalculated
+      for every later one. The caller must drop entries when a bill, a location or the project changes. */
+  function billState(project, sections, bills, bill, memo) {
     const sorted = sortedBills(bills, project.id);
+    const thisOf = (b) => { if (!memo) return billThis(project, sections, sorted, b); let t = memo.get(b.id); if (!t) { t = billThis(project, sections, sorted, b); memo.set(b.id, t); } return t; };
     const prev = mergeInto({}, (project.opening && project.opening.blocks) || {}, 1);
     sorted.forEach((b) => {
-      if (b.seq < bill.seq && b.status !== 'Cancelled') mergeInto(prev, b.frozen ? b.frozen.qty : billThis(project, sections, sorted, b).qty, 1);
+      if (b.seq < bill.seq && b.status !== 'Cancelled') mergeInto(prev, b.frozen ? b.frozen.qty : thisOf(b).qty, 1);
     });
-    const live = billThis(project, sections, sorted, bill);
+    const live = thisOf(bill);
     const cur = bill.status === 'Cancelled' ? {} : (bill.frozen ? bill.frozen.qty : live.qty);
     return { prev, cur, detail: live.detail, sorted, live: live.qty };
   }
@@ -264,8 +275,8 @@
   }
 
   /** Full computation for a bill. */
-  function computeBill(project, sections, bills, bill) {
-    const st = billState(project, sections, bills, bill);
+  function computeBill(project, sections, bills, bill, memo) {
+    const st = billState(project, sections, bills, bill, memo);
     const blocks = (project.blocks || []);
     const ids = blocks.map((b) => b.id);
     const perBlock = blocks.map((b) => ({ block: b, abs: abstract(project, st.prev, st.cur, [b.id]) }));

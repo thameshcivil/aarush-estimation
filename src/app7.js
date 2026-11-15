@@ -89,7 +89,7 @@ ACT.uploadRab = async (el) => {
     const byName = {}; wbs.forEach((w) => { byName[w.name] = w; });
     await keepNewestTemplate(p.id, report.files.map((f) => ({ name: f.name, rab: f.rab, buf: byName[f.name].buf })));
   } catch (e) { console.error(e); }
-  if (typeof CACHE !== 'undefined') CACHE = new Map();
+  resetCalc();
   Sync.schedule(300); render();
   toast([report.added.length ? 'Added ' + report.added.join(', ') : '', report.replaced.length ? 'Replaced ' + report.replaced.join(', ') : ''].filter(Boolean).join(' · ') || 'Saved');
 };

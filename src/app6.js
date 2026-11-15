@@ -52,7 +52,7 @@ async function buildFromRunningBills(base, files) {
   bills.forEach((b, i) => { const last = i === bills.length - 1; b.status = st === 'submitted' ? 'Submitted' : last ? 'Submitted' : st === 'certified' ? 'Certified' : 'Paid'; });
   const batch = [{ kind: 'project', data: project }, ...bills.map((b) => ({ kind: 'bill', data: b })), ...sections.map((s) => ({ kind: 'section', data: s }))];
   await Store.putMany(batch);
-  if (typeof CACHE !== 'undefined') CACHE = new Map();
+  resetCalc();
   Sync.schedule(300);
   toast(`${project.name}: ${bills.length} bills and ${sections.length} locations saved`);
   return true;

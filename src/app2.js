@@ -11,14 +11,33 @@ function sectionsOf(pid) {
 }
 const billsOf = (pid) => Store.list('bill').filter((b) => b.projectId === pid).sort((a, b) => a.seq - b.seq);
 function proj(id) { const p = Store.get(id); if (p && !p.categories) p.categories = clone(Calc.DEFAULT_CATEGORIES); return p; }
+// calculated bills, kept until something they depend on changes: a bill change affects that bill and the later
+// bills of its project, a location or project change affects that project's bills; nothing else is recalculated
 let CACHE = new Map();
-Store.onChange(() => { CACHE = new Map(); });
+const CACHE_META = new Map(); // bill id -> {pid, seq}
+Store.onChange((r) => {
+  if (!r) { CACHE = new Map(); THIS = new Map(); return; }
+  const k = r.kind, d = r.data || {};
+  let pid = null, fromSeq = -Infinity;
+  if (k === 'bill') { pid = d.projectId; fromSeq = N(d.seq); const old = CACHE_META.get(d.id); if (old) { if (old.pid !== pid) dropProject(old.pid); fromSeq = Math.min(fromSeq, old.seq); } }
+  else if (k === 'section') pid = d.projectId;
+  else if (k === 'project') pid = d.id;
+  else return; // contractors, register entries, workbooks… do not change bill amounts
+  if (!pid) { CACHE = new Map(); THIS = new Map(); return; }
+  CACHE.forEach((v, id) => { const m = CACHE_META.get(id); if (!m || (m.pid === pid && m.seq >= fromSeq)) CACHE.delete(id); });
+  THIS.forEach((v, id) => { const m = CACHE_META.get(id); if (!m || (m.pid === pid && m.seq >= fromSeq)) THIS.delete(id); });
+});
+function resetCalc() { CACHE = new Map(); THIS = new Map(); }
+let THIS = new Map(); // bill id -> its own quantities (shared by the calculation of every later bill)
+function dropProject(pid) { [CACHE, THIS].forEach((M) => M.forEach((v, id) => { const m = CACHE_META.get(id); if (!m || m.pid === pid) M.delete(id); })); }
 function compute(bill) {
   const k = bill.id;
   if (CACHE.has(k)) return CACHE.get(k);
   const p = proj(bill.projectId); if (!p) return null;
-  const r = Calc.computeBill(p, sectionsOf(p.id), billsOf(p.id), bill);
-  CACHE.set(k, r); return r;
+  // the project's bills share one memo of their own quantities; their metadata is recorded for invalidation
+  billsOf(p.id).forEach((b) => { if (!CACHE_META.has(b.id)) CACHE_META.set(b.id, { pid: p.id, seq: N(b.seq) }); });
+  const r = Calc.computeBill(p, sectionsOf(p.id), billsOf(p.id), bill, THIS);
+  CACHE.set(k, r); CACHE_META.set(k, { pid: p.id, seq: N(bill.seq) }); return r;
 }
 const received = (b) => (b.payments || []).reduce((s, x) => s + (N(x.amount) || 0), 0);
 function billRow(b) {
@@ -83,7 +102,7 @@ function render() {
   if (r.name === 'settings') loadMembers();
 }
 window.addEventListener('hashchange', render);
-function onRemoteChange() { CACHE = new Map(); const a = document.activeElement; if (a && /INPUT|TEXTAREA|SELECT/.test(a.tagName) && $('#main').contains(a)) { onRemoteChange.pending = true; return; } render(); }
+function onRemoteChange() { resetCalc(); const a = document.activeElement; if (a && /INPUT|TEXTAREA|SELECT/.test(a.tagName) && $('#main').contains(a)) { onRemoteChange.pending = true; return; } render(); }
 document.addEventListener('focusout', () => { if (onRemoteChange.pending) { onRemoteChange.pending = false; setTimeout(render, 50); } });
 
 /* ---------- event delegation ---------- */
@@ -651,7 +670,7 @@ ACT.importFile = () => {
       toast('Importing ' + d.records.length + ' records…', 10000);
       d.records.forEach((r) => { if (r.kind === 'project' && !r.data.categories) r.data.categories = clone(Calc.DEFAULT_CATEGORIES); });
       await Store.putMany(d.records.map((r) => ({ kind: r.kind, data: r.data })));
-      CACHE = new Map(); Sync.schedule(300);
+      resetCalc(); Sync.schedule(300);
       toast(`Imported ${d.records.length} records`); go('home'); render();
     } catch (e) { toast('Import failed: ' + e.message, 4000); }
   };
