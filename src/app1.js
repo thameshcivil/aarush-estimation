@@ -1,6 +1,6 @@
 /* Aarush Estimation – app core: utilities, local store, cloud sync */
 'use strict';
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.6.0';
 const $ = (s, el) => (el || document).querySelector(s);
 const $$ = (s, el) => Array.from((el || document).querySelectorAll(s));
 const esc = (s) => String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -211,8 +211,11 @@ const Sync = (() => {
     try {
       // push
       const d = Store.dirty();
-      for (let i = 0; i < d.length; i += 100) {
-        const chunk = d.slice(i, i + 100);
+      // batches of up to 100 records and about 1.5 MB (stored workbooks are large)
+      const batches = []; let cur = [], size = 0;
+      d.forEach((r) => { const z = JSON.stringify(r.data || {}).length + 200; if (cur.length && (cur.length >= 100 || size + z > 1500000)) { batches.push(cur); cur = []; size = 0; } cur.push(r); size += z; });
+      if (cur.length) batches.push(cur);
+      for (const chunk of batches) {
         await api('/rest/v1/rpc/upsert_records', { method: 'POST', body: JSON.stringify({ p_org: org, p_rows: chunk.map((r) => ({ id: r.id, kind: r.kind, data: r.data, updated_at: r.updated_at, deleted: r.deleted })) }) });
         chunk.forEach((r) => Store.markClean(r.id, r.updated_at));
       }
@@ -221,10 +224,10 @@ const Sync = (() => {
       const sinceQ = new Date(new Date(since).getTime() - 15000).toISOString();
       let maxTs = since; let page = 0;
       for (;;) {
-        const rows = await api(`/rest/v1/records?select=id,kind,data,updated_at,deleted,server_ts&org_id=eq.${org}&server_ts=gt.${encodeURIComponent(sinceQ)}&order=server_ts.asc&limit=500&offset=${page * 500}`);
+        const rows = await api(`/rest/v1/records?select=id,kind,data,updated_at,deleted,server_ts&org_id=eq.${org}&server_ts=gt.${encodeURIComponent(sinceQ)}&order=server_ts.asc&limit=100&offset=${page * 100}`);
         if (await Store.applyRemoteMany(rows)) changed = true;
         rows.forEach((row) => { if (row.server_ts > maxTs) maxTs = row.server_ts; });
-        if (rows.length < 500) break; page++;
+        if (rows.length < 100) break; page++;
       }
       Store.setMeta('lastPull_' + org, maxTs);
       setStatus('ok', 'Last synced ' + new Date().toLocaleTimeString());

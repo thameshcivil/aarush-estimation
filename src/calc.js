@@ -132,6 +132,11 @@
     const out = {}; const detail = [];
     const ibc = itemsByCat(project);
     const ver = bill.versionId;
+    // an item without a rate in the bill's rate version is billed at its latest rate (the newest work order that has it)
+    const vlist = (project.versions || []).filter((v) => !v.mergeInto).slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || String(b.id).localeCompare(String(a.id), undefined, { numeric: true }));
+    const bv = (project.versions || []).find((v) => v.id === ver);
+    const vcache = {};
+    const verFor = (wi) => { if (vcache[wi]) return vcache[wi]; let id = ver; if (!bv || !bv.rates || bv.rates[wi] === undefined || bv.rates[wi] === null) { const f = vlist.find((v) => v.rates && v.rates[wi] !== undefined && v.rates[wi] !== null); if (f) id = f.id; } return (vcache[wi] = id); };
     sections.filter((s) => s.projectId === project.id && !s.deleted && !s.isTemplate).forEach((s) => {
       const tot = sectionTotals(s, project);
       Object.keys(tot).forEach((cat) => {
@@ -139,14 +144,14 @@
           const prev = prevPct(s, it.id, bill, billsSorted);
           const cur = curPct(s, it.id, bill, billsSorted);
           const q = tot[cat] * (cur - prev) / 100;
-          if (Math.abs(q) > 1e-9) add(out, s.blockId, ver, it.id, q);
+          if (Math.abs(q) > 1e-9) add(out, s.blockId, verFor(it.id), it.id, q);
           if (prev || cur) detail.push({ sectionId: s.id, blockId: s.blockId, cat, wi: it.id, total: tot[cat], prev, cur, prevQ: tot[cat] * prev / 100, thisQ: q, cumQ: tot[cat] * cur / 100 });
         });
       });
     });
     (bill.direct || []).forEach((d) => {
       const q = num(d.qty);
-      if (q && d.blockId && d.wi) add(out, d.blockId, d.versionId || ver, d.wi, q);
+      if (q && d.blockId && d.wi) add(out, d.blockId, d.versionId || verFor(d.wi), d.wi, q);
     });
     return { qty: out, detail };
   }

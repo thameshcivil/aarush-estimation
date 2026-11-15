@@ -105,7 +105,7 @@
     });
     const lines = [];
     groups.forEach((gr) => gr.lines.forEach((l) => lines.push(Object.assign(l, { sec: gr.sec, gkey: gr.key, group: gr.name, coatKey: gr.key + '||' + l.coat.toLowerCase() }))));
-    return { lines, secs };
+    return { lines, secs, h, hr };
   }
 
   /* ---------- build structure from the latest workbook, match every workbook to it ---------- */
@@ -198,10 +198,11 @@
   /** match the coat columns of a sheet section to the items of one category (role first, then words such as Ceiling/Wall/Scratch) */
   const WSTOP = new Set(['coat', 'coats', 'painting', 'paint', 'the', 'and', 'for', '1st', '2nd', '3rd', 'one', 'qty', 'with']);
   const words = (t) => new Set(String(t).toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter((w) => w.length > 2 && !WSTOP.has(w)));
-  function mapCoats(cs, its) {
+  function mapCoats(cs, its, avoid) {
     const usedIt = new Set();
     return cs.map((x, i) => {
       let cand = its.filter((t) => roleOf(t.desc) === x.role && !usedIt.has(t.id));
+      if (avoid && cand.some((t) => !avoid.has(t.id))) cand = cand.filter((t) => !avoid.has(t.id)); // an item already taken by another column of this sheet
       if (cand.length > 1) {
         const xw = words(x.name);
         const sc = (t) => { const tw = words(t.desc); let n = 0; xw.forEach((w) => { if (tw.has(w)) n++; }); return n; };
@@ -221,6 +222,7 @@
     tk.forEach((k) => { if (!ck.has(k) && EXCL.includes(k) && k !== 'wall' && k !== 'ceiling') s -= 1.5; });
     if (ck.has('wall') && tk.has('ceiling') && !tk.has('wall')) s -= 1.5;
     if (ck.has('ceiling') && tk.has('wall') && !tk.has('ceiling')) s -= 1.5;
+    if (tk.has('toilet') && !ck.has('toilet') && ck.has('false')) s += 3.5; // toilets are billed as "above false ceiling" where there is no toilet group
     if (roles && roles.length) { const cr = new Set((ibc[c.id] || []).map((i) => roleOf(i.desc))); const hit = roles.filter((r) => cr.has(r)).length; s += hit; if (!hit) s -= 2; }
     return s;
   }
@@ -231,7 +233,8 @@
    * so a copy-pasted column title cannot send quantities to the wrong item.
    * Returns {locs:{key:{name, blockId, floor, floorNo, pore, flatNo, series, kind, cats:{cat:{total, cum:{wi:qty}}}}}, rep}
    */
-  function readLocations(wb, project, absBlk) {
+  function readLocations(wb, project, absBlk, forced) {
+    const famItems = (cid) => (project.items || []).filter((i) => i.cat === cid || String(i.cat).startsWith(cid + '__'));
     const blocks = project.blocks || []; const ibc = C.itemsByCat(project); const out = {}; const rep = { sheets: [], skipped: [], map: [] };
     const remain = {}; Object.keys(absBlk || {}).forEach((b) => { remain[b] = Object.assign({}, absBlk[b]); });
     const hasAbs = !!absBlk && Object.keys(absBlk).length > 0;
@@ -256,33 +259,49 @@
         const title = [str(ws.getCell(tr - 1, tc)), str(ws.getCell(tr - 2, tc))].join(' ');
         // single header row ("Total Qty | Previous | This Bill | % | <coat> qty"): one coat per group, named by its last column
         if (coats.some((x) => x.c > tc && x.c < nextT && /previous|this\s*bill|present/i.test(x.name))) {
+          // several coats in one group: each ends at its own quantity column, named after the coat ("1 Coat Primer | Previous | This | % | 1st coat Enamel …")
+          const KWH = /%|percent|previous|prev\b|this\s*bill|present|current|cum+ulative|upto|remark|total/i;
+          const ends = []; for (let k = tc + 1; k < nextT; k++) { const h = str(ws.getCell(tr, k)); if (h && !KWH.test(h)) ends.push(k); }
+          if (ends.length > 1) {
+            let st = tc + 1;
+            const cs = ends.map((k) => { const nm = str(ws.getCell(tr, k)); let pc = null; for (let j = st; j < k; j++) { const h = str(ws.getCell(tr, j)); if (/prev/i.test(h) && !/%|percent/i.test(h)) { pc = j; break; } } const o = { name: nm, role: roleOf(nm), cumC: k, c0: st, c1: k, prevC: pc }; st = k + 1; return o; });
+            return { tc, title, single: true, cs };
+          }
           let cq = null; for (let k = nextT - 1; k > tc; k--) { const h = str(ws.getCell(tr, k)); if (h && !/%|percent|previous|this\s*bill|present|remark/i.test(h)) { cq = k; break; } }
           const nm = cq ? str(ws.getCell(tr, cq)) : title;
-          return { tc, title, cs: cq ? [{ name: nm + ' ' + title, role: roleOf(nm), cumC: cq }] : [] };
+          let pc = null; for (let k = tc + 1; k < nextT; k++) { const h = str(ws.getCell(tr, k)); if (/prev/i.test(h) && !/%|percent/i.test(h)) { pc = k; break; } }
+          return { tc, title, single: true, cs: cq ? [{ name: nm + ' ' + title, role: roleOf(nm), cumC: cq, c0: tc + 1, c1: cq, prevC: pc }] : [] };
         }
         const cs = coats.filter((x) => x.c > tc && x.c < nextT).map((x, i, arr) => {
           let end = (arr[i + 1] ? arr[i + 1].c : nextT) - 1;
           // the cumulative quantity column: the last "cumulative" heading in the span (a % triplet may come first)
           let cq = null; for (let k = x.c; k <= end; k++) { const h = str(ws.getCell(tr + 1, k)); if (/cum+ulative|upto\s*date|up\s*to\s*date/i.test(h) && !/%|percent/i.test(h)) cq = k; }
           if (cq) end = cq;
-          return { name: x.name, role: roleOf(x.name), cumC: end };
+          const c1 = (arr[i + 1] ? arr[i + 1].c : nextT) - 1; let pc = null; const pcs = []; for (let k = x.c; k <= c1; k++) { const h = str(ws.getCell(tr + 1, k)); if (/prev|upto\s*previous/i.test(h) && !/%|percent/i.test(h)) pcs.push([k, h]); }
+          // several previous columns (old rate / new rate / claimed): the claimed total, else the last one
+          if (pcs.length) pc = (pcs.find(([, h]) => /claim|total/i.test(h)) || pcs[pcs.length - 1])[0];
+          return { name: x.name, role: roleOf(x.name), cumC: end, c0: x.c, c1, prevC: pc };
         });
         return { tc, title, cs };
       });
       const secs = []; grp.forEach((g) => { const last = secs[secs.length - 1]; if (last && last.title === g.title && !last.cs.some((x) => g.cs.some((y) => y.role === x.role))) last.g.push(g); else secs.push({ title: g.title, g: [g], get cs() { return this.g.flatMap((q) => q.cs); } }); });
       // ---- pass 1: rows → locations with raw column values
       const sheetBlock = blockFromText(ws.name, blocks) || (blocks.length === 1 ? blocks[0].id : null);
-      let curBlock = sheetBlock, floor = null, pore = ''; let sawTotal = false; const seenHere = new Set(); const rows = [];
-      const cols = [...new Set(grp.flatMap((g) => [g.tc, ...g.cs.map((x) => x.cumC)]))];
+      let curBlock = sheetBlock, floor = null, pore = '', lastHead = ''; let sawTotal = false; const seenHere = new Set(); const rows = [];
+      const cols = [...new Set(grp.flatMap((g) => [g.tc, ...g.cs.map((x) => x.cumC), ...g.cs.map((x) => x.prevC).filter(Boolean)]))];
+      if (forced && !forced[ws.name]) { rep.skipped.push(ws.name + ' (not used in the bill)'); return; }
+      if (forced) forced[ws.name].forEach((g) => { [g.tc, g.cumC, g.prevC].forEach((c) => { if (c && !cols.includes(c)) cols.push(c); }); });
       for (let r = tr + 2; r <= ws.rowCount; r++) {
         const row = ws.getRow(r); const name = str(row.getCell(2)); if (!name) continue;
         const tots = totals.map((tc) => num(row.getCell(tc)));
         if (tots.every((v) => v === null)) {
-          let anyNum = false; for (let c = 3; c <= Math.min(maxC, 40); c++) if (num(row.getCell(c)) !== null) { anyNum = true; break; }
-          if (!anyNum) {
+          let anyNum = false; for (let c = 3; c <= Math.min(maxC, 40); c++) { const q = num(row.getCell(c)); if (q !== null && q !== 0) { anyNum = true; break; } }
+          const headLike = /^[A-Z]{1,2}$|^[IVX]+$/.test(str(row.getCell(1))) || /\b(block|tower|core|pore|wing)\b/i.test(name) || !!floorOf(name);
+          if (!anyNum || (headLike && !/^flat/i.test(name))) {
             const b = blockFromText(name, blocks); if (b) { if (b !== curBlock) { sawTotal = false; } curBlock = b; pore = ''; }
             const pm = name.match(/\b(core|pore|wing)\s*-?\s*([a-z0-9]+)/i); if (pm) { pore = pm[1][0].toUpperCase() + pm[1].slice(1).toLowerCase() + ' ' + pm[2].toUpperCase(); sawTotal = false; }
             const f = floorOf(name); if (f) floor = f;
+            lastHead = name;
             continue;
           }
         }
@@ -292,21 +311,29 @@
         const fm = name.match(/^flat\s*(?:no\.?|#)?[\s.-]*#?(?:(\d)?([a-z])[\s-]*)?(\d{3,4})$/i);
         let key, meta;
         if (fm) {
-          const no = +fm[3]; const fl = Math.floor(no / 100); const pre = (fm[1] || '') + (fm[2] || '').toUpperCase();
-          key = `${curBlock}|flat|${pre}${no}`; meta = { kind: 'flat', name: 'Flat No.' + pre + no, flatNo: no, series: (fm[2] ? fm[2].toUpperCase() : '') + String(no % 100).padStart(2, '0'), floor: 'Floor ' + String(fl).padStart(2, '0'), floorNo: fl };
+          // "Flat-3E101", "Flat #E101" and "Flat No.101" under a "Core E" heading are the same flat E101 of block 3
+          const coreL = ((pore || '').match(/^core\s+([a-z])$/i) || [])[1];
+          const no = +fm[3]; const fl = Math.floor(no / 100); const pre = ((fm[2] || coreL || '')).toUpperCase();
+          key = `${curBlock}|flat|${pre}${no}`; meta = { kind: 'flat', name: 'Flat No.' + pre + no, flatNo: no, series: pre + String(no % 100).padStart(2, '0'), floor: 'Floor ' + String(fl).padStart(2, '0'), floorNo: fl };
           if (fm[2] && !pore) pore = 'Core ' + fm[2].toUpperCase();
         } else {
           const f = floorOf(name) || floor || ['Full height / External', 98];
           key = `${curBlock}|${pore}|${f[0]}|${name.toLowerCase()}`; meta = { kind: 'common', name: pore && !new RegExp(pore, 'i').test(name) ? name + ' – ' + pore : name, flatNo: null, series: '', floor: f[0], floorNo: f[1] };
         }
         if (seenHere.has(key) && sawTotal) continue; // summary table repeating the rows above
-        seenHere.add(key);
+        if (seenHere.has(key)) { // same name twice in one table (e.g. "Main Door" and "Bedroom Door" lists): name it after its heading
+          const lab = String(lastHead || '').replace(/block\s*-?\s*0*\d+/ig, '').replace(/core\s*-?\s*[a-z0-9]+/ig, '').replace(/^[\s\-–,&]+|[\s\-–,&]+$/g, '');
+          let k2 = lab ? key + '#' + lab.toLowerCase() : null; let nm = lab ? meta.name + ' – ' + lab : null;
+          if (!k2 || seenHere.has(k2)) { let n = 2; while (seenHere.has(key + '#' + n)) n++; k2 = key + '#' + n; nm = meta.name + ' (' + n + ')'; }
+          seenHere.add(k2); key = k2; meta = Object.assign({}, meta, { name: nm });
+        }
+        else seenHere.add(key);
         const v = {}; cols.forEach((c) => { v[c] = num(row.getCell(c)) || 0; });
-        rows.push({ key, meta, block: curBlock, pore: (name.match(/\b(pore|core)\s*-?\s*[a-z0-9]+(\s*&\s*\d+)?/i) || [])[0] || pore, v });
+        rows.push({ r, key, meta, block: curBlock, pore: (name.match(/\b(pore|core)\s*-?\s*[a-z0-9]+(\s*&\s*\d+)?/i) || [])[0] || pore, v });
       }
       // ---- pass 2: pick a category for every section
-      const sn = kwOf(ws.name); const used = new Set(); const assign = [];
-      secs.forEach((sec) => {
+      const sn = kwOf(ws.name); const used = new Set(); const sheetItems = new Set(); const assign = forced ? forced[ws.name].map((g) => Object.assign({}, g)) : [];
+      if (!forced) secs.forEach((sec) => {
         const cs = sec.cs; const roles = cs.map((x) => x.role);
         const ttl = (sn.has('wall') || sn.has('ceiling')) ? sec.title.replace(/wall|ceiling/ig, ' ') : sec.title;
         const text = ws.name + ' ' + ttl + ' ' + cs.map((x) => x.name).join(' ');
@@ -315,8 +342,8 @@
         const anyData = sums.some((m) => Object.values(m).some((q) => q > 0.5));
         let best = null, bs = -1e9, bmap = null;
         (project.categories || []).forEach((c) => {
-          const its = ibc[c.id] || []; if (!its.length) return;
-          const map = mapCoats(cs, its);
+          if (String(c.id).includes('__')) return; const its = famItems(c.id); if (!its.length) return;
+          const map = mapCoats(cs, its, sheetItems);
           if (!map.some(Boolean)) return;
           let s = kwScore(project, c, text, roles, ibc);
           if (used.has(c.id)) s -= 0.6;
@@ -340,22 +367,24 @@
           const it = bmap[i]; if (!it) return;
           Object.keys(sums[i]).forEach((b) => { if (remain[b]) remain[b][it.id] = (remain[b][it.id] || 0) - sums[i][b]; });
           const tc = sec.g.find((g) => g.cs.includes(x)).tc;
-          assign.push({ cat: best.id, tc, cumC: x.cumC, wi: it.id });
+          sheetItems.add(it.id); assign.push({ cat: it.cat || best.id, tc, cumC: x.cumC, prevC: x.prevC, wi: it.id, c0: x.c0, c1: x.c1, single: !!sec.g.find((g) => g.cs.includes(x)).single });
           rep.map.push(`${ws.name} | ${x.name} [col ${x.cumC}] → ${best.name} / ${it.desc}`);
         });
-        sec.g.forEach((g) => { if (!g.cs.length) { const its = ibc[best.id] || []; if (its.length === 1) assign.push({ cat: best.id, tc: g.tc, cumC: g.tc + 4, wi: its[0].id }); } });
+        if (!forced) sec.g.forEach((g) => { if (!g.cs.length) { const its = ibc[best.id] || []; if (its.length === 1) assign.push({ cat: best.id, tc: g.tc, cumC: g.tc + 4, wi: its[0].id }); } });
       });
       if (!assign.length) { rep.skipped.push(ws.name + ' (coats not matched)'); return; }
       rep.sheets.push(ws.name);
+      (rep.layout = rep.layout || []).push({ ws, tr, rows: rows.map((r) => ({ r: r.r, key: r.key, meta: r.meta, block: r.block })), assign });
       // ---- pass 3: aggregate
       rows.forEach((r) => {
         const L = out[r.key] = out[r.key] || Object.assign({ blockId: r.block, pore: r.pore, cats: {} }, r.meta);
         const seenTc = new Set();
         assign.forEach((g) => {
           const tot = r.v[g.tc]; if (!tot) return;
-          const K = L.cats[g.cat] = L.cats[g.cat] || { total: 0, cum: {} };
+          const K = L.cats[g.cat] = L.cats[g.cat] || { total: 0, cum: {}, prev: {} };
           const tk = g.cat + '|' + g.tc; if (!seenTc.has(tk)) { K.total += tot; seenTc.add(tk); }
           K.cum[g.wi] = (K.cum[g.wi] || 0) + (r.v[g.cumC] || 0);
+          if (g.prevC) { K.prev = K.prev || {}; K.prev[g.wi] = (K.prev[g.wi] || 0) + (r.v[g.prevC] || 0); }
         });
       });
     });
@@ -445,6 +474,25 @@
       frozen: { qty, at: new Date().toISOString(), net: (w.inv.totals.net || {}).cur }
     }));
     // locations from the latest workbook, % after every bill
+    // a coat measured on its own area (its own "Total Quantity" column, e.g. Damp Proof on part of the wall) gets its own category,
+    // so its % is of its own area – as in the workbook
+    {
+      const pre = readLocations(latest.wb, project, perFile[perFile.length - 1].ab).rep.layout || [];
+      const byCat = {}; pre.forEach((l) => l.assign.forEach((g) => { const m = byCat[g.cat] = byCat[g.cat] || {}; (m[g.tc] = m[g.tc] || new Set()).add(g.wi); }));
+      Object.keys(byCat).forEach((cid) => {
+        const tcs = Object.keys(byCat[cid]); if (tcs.length < 2) return;
+        const main = tcs.slice().sort((a, b) => byCat[cid][b].size - byCat[cid][a].size)[0];
+        const mainW = byCat[cid][main];
+        const cat = project.categories.find((c) => c.id === cid); if (!cat) return;
+        tcs.filter((t) => t !== main).forEach((t) => byCat[cid][t].forEach((wi) => {
+          if (mainW.has(wi)) return; const it = project.items.find((i) => i.id === wi); if (!it || it.cat !== cid) return;
+          const short = String(it.desc).replace(/^painting\s*[\[{][^\]}]*[\]}]\s*-\s*/i, '');
+          const nid = cid + '__' + slug(short, 30);
+          if (!project.categories.find((c) => c.id === nid)) project.categories.splice(project.categories.indexOf(cat) + 1, 0, Object.assign({}, cat, { id: nid, name: cat.name + ' (' + short + ' area)' }));
+          it.cat = nid;
+        }));
+      });
+    }
     const locLatest = readLocations(latest.wb, project, perFile[perFile.length - 1].ab);
     const sections = []; const secByKey = {}; let order = 0;
     Object.keys(locLatest.locs).forEach((key) => {
@@ -456,14 +504,15 @@
     });
     // floors per block
     blocks.forEach((b) => { const f = {}; sections.filter((s) => s.blockId === b.id).forEach((s) => { f[s.floor] = s.floorNo; }); b.floors = Object.keys(f).sort((a, c) => f[a] - f[c]); });
-    const pctOf = (locs) => { const out = {}; Object.keys(locs).forEach((key) => { const s = secByKey[key]; if (!s) return; const L = locs[key]; Object.keys(L.cats).forEach((cat) => { const K = L.cats[cat]; if (!K.total) return; Object.keys(K.cum).forEach((wi) => { const v = Math.min(100, Math.round(K.cum[wi] / K.total * 10000) / 100); if (v > 0) (out[s.id] = out[s.id] || {})[wi] = v; }); }); }); return out; };
+    const pctOf = (locs) => { const out = {}; Object.keys(locs).forEach((key) => { const s = secByKey[key]; if (!s) return; const L = locs[key]; Object.keys(L.cats).forEach((cat) => { const K = L.cats[cat]; if (!K.total) return; Object.keys(K.cum).forEach((wi) => { const T = K.total; const v = Math.min(100, Math.round(K.cum[wi] / T * 1e6) / 1e4); if (v > 0) (out[s.id] = out[s.id] || {})[wi] = v; }); }); }); return out; };
     let prevPct = {};
     perFile.forEach(({ w, ab }, i) => {
       const locs = w === latest ? locLatest.locs : readLocations(w.wb, project, ab).locs;
       const pct = pctOf(locs);
       if (i === 0 && first.inv.rab > 1) {
-        // what was already billed before the first uploaded RAB: cumulative minus this bill is not available per location, so use this file's cumulative as the starting point
-        sections.forEach((s) => { if (pct[s.id]) s.openingPct = {}; });
+        // what was billed before the first uploaded RAB, per location: the "previous" columns of that workbook
+        Object.keys(locs).forEach((key) => { const sc = secByKey[key]; if (!sc) return; const L = locs[key]; Object.keys(L.cats).forEach((cat) => { const K = L.cats[cat]; if (!K.total) return; Object.keys(K.prev || {}).forEach((wi) => { const T = K.total; const v = Math.round(K.prev[wi] / T * 1e6) / 1e4; if (v > 0) sc.openingPct[wi] = v; }); }); });
+        prevPct = {}; sections.forEach((sc) => { if (Object.keys(sc.openingPct || {}).length) prevPct[sc.id] = Object.assign({}, sc.openingPct); });
       }
       const delta = {};
       Object.keys(pct).forEach((sid) => Object.keys(pct[sid]).forEach((wi) => { if (Math.abs(pct[sid][wi] - ((prevPct[sid] || {})[wi] || 0)) > 0.004) (delta[sid] = delta[sid] || {})[wi] = pct[sid][wi]; }));
@@ -478,11 +527,166 @@
     const recon = project.items.map((it) => ({ wi: it.id, desc: it.desc, group: it.group, abs: absCum[it.id] || 0, loc: locCum[it.id] || 0 })).filter((x) => x.abs || x.loc);
     recon.forEach((x) => { x.ok = Math.abs(x.abs - x.loc) <= Math.max(1, 0.01 * x.abs); });
     report.recon = recon; report.qtySheets = locLatest.rep;
+    project.tplMap = {}; const layouts = locLatest.rep.layout || []; (locLatest.rep.layout || []).forEach((l) => { project.tplMap[l.ws.name] = l.assign.map((g) => ({ cat: g.cat, tc: g.tc, cumC: g.cumC, prevC: g.prevC || null, wi: g.wi, c0: g.c0, c1: g.c1, single: !!g.single })); });
+    if (!(base.links || []).length) { const lk = detectLinks(layouts); if (lk.length) { project.links = lk; report.links = lk.length; } }
     report.warnings = []; perFile.forEach(({ w }) => (w.rebal || []).forEach((n) => { const it = project.items.find((i) => i.id === n.wi); report.warnings.push(`${w.inv.rabNo}: block sheets show ${n.blocks.toFixed(2)} for “${it ? it.group + ' – ' + it.desc : n.wi}” but the combined abstract shows ${n.combined.toFixed(2)} – followed the combined abstract (the invoice).`); }));
     return { project, bills, sections, report };
   }
 
-  const api = { readInvoice, parseAbstract, abstractSheets, buildProject, readLocations };
+
+  /**
+   * Linked progress as the workbook does it: a % column whose cells are formulas pointing at another sheet's % column
+   * (='Qty Abst (Int Ceiling)'!F12 or INDEX('Qty Abst (Int Ceiling)'!F$10:F$113, MATCH(...))) becomes a "same as" link.
+   */
+  function detectLinks(layouts) {
+    const pctColOf = (L, g) => { for (let c = g.c0; c <= g.c1; c++) { const h = g.single ? str(L.ws.getCell(L.tr, c)) : str(L.ws.getCell(L.tr + 1, c)); if (/%|percent/i.test(h)) return c; } return null; };
+    const colNum = (t) => { let n = 0; for (const ch of t.toUpperCase()) n = n * 26 + ch.charCodeAt(0) - 64; return n; };
+    const byName = {}; layouts.forEach((L) => { byName[L.ws.name.toLowerCase()] = L; });
+    const out = []; const seen = new Set();
+    layouts.forEach((L) => L.assign.forEach((g) => {
+      const pc = pctColOf(L, g); if (!pc) return;
+      let f = null;
+      for (const row of L.rows) { const cell = L.ws.getCell(row.r, pc); const v = cell.value; if (v && typeof v === 'object' && (v.formula || v.sharedFormula)) { try { f = cell.formula; } catch (e) { f = null; } if (f) break; } }
+      if (!f) return;
+      if (/[*\/]/.test(f.replace(/MATCH\([^)]*\)/ig, ''))) return; // a computed %, not a copy
+      // every reference to a % column of another coat (this sheet or another one)
+      const hits = []; const re = /(?:'((?:[^']|'')+)'!|([A-Za-z0-9_.]+)!)?\$?([A-Z]{1,3})\$?(\d+)/g; let m;
+      while ((m = re.exec(f))) { const sheet = m[1] ? m[1].replace(/''/g, "'") : m[2]; const S = sheet ? byName[sheet.toLowerCase()] : L; if (!S) continue; const sc = colNum(m[3]); const src = S.assign.find((x) => x.c0 <= sc && sc <= x.c1); if (!src || src.wi === g.wi) continue; if (pctColOf(S, src) !== sc) continue; hits.push(src); }
+      const uniq = [...new Set(hits.map((h) => h.wi))]; if (uniq.length !== 1) return;
+      const src = hits[0];
+      const k = g.wi + '<' + src.wi; if (seen.has(k)) return; seen.add(k);
+      out.push({ id: 'l' + out.length + '_' + g.wi, target: g.wi, source: src.wi, mode: 'same', gt: null, set: null, from: 'workbook' });
+    }));
+    return out;
+  }
+
+  /* ---------- add / replace running bills in an existing project ---------- */
+  const clone = (o) => JSON.parse(JSON.stringify(o));
+  const itemKey = (it) => String(it.gid || it.group || '').toLowerCase() + '||' + String(it.desc).toLowerCase();
+  const secKey = (s) => `${s.blockId}|${String(s.name).toLowerCase()}|${s.floor || ''}`;
+
+  /**
+   * Merge RAB workbooks into an existing project: a new RAB number is added, an existing one is replaced.
+   * ex = {project, bills, sections} (all of this project). files = [{name, wb}].
+   * Returns {project, bills (changed), sections (changed), report}
+   */
+  function mergeRab(ex, files) {
+    const P = clone(ex.project); const bills = clone(ex.bills || []); const sections = clone(ex.sections || []);
+    P.items = P.items || []; P.categories = P.categories || []; P.versions = P.versions || []; P.blocks = P.blocks || [];
+    const chB = new Set(); const chS = new Set(); const stamp = Date.now().toString(36); let nNew = 0;
+    const report = { files: [], skipped: [], warnings: [], unmatched: [], added: [], replaced: [], newItems: 0, newSections: 0, latest: null };
+    const W = files.map((f) => ({ name: f.name, wb: f.wb, inv: readInvoice(f.wb) }));
+    W.forEach((w) => { if (w.inv.rab === null) { const m = w.name.match(/RAB[\s_-]*0*(\d+)/i); if (m) { w.inv.rab = +m[1]; w.inv.rabNo = 'RAB ' + m[1].padStart(3, '0'); } } });
+    W.filter((w) => w.inv.rab === null).forEach((w) => report.skipped.push(w.name + ': RAB number not found'));
+    const good = W.filter((w) => w.inv.rab !== null).sort((a, b) => a.inv.rab - b.inv.rab);
+    const live = () => bills.filter((b) => b.status !== 'Cancelled');
+    good.forEach((w) => {
+      let one;
+      try { one = buildProject([{ name: w.name, wb: w.wb }], { id: P.id, contractorId: P.contractorId, name: P.name, tax: P.tax, links: P.links }); } catch (e) { report.skipped.push(w.name + ': ' + e.message); return; }
+      const O = one.project; const seq = w.inv.rab;
+      const maxSeq = Math.max(0, ...live().map((b) => b.seq));
+      const isLatest = seq >= maxSeq;
+      report.unmatched.push(...one.report.unmatched); report.warnings.push(...(one.report.warnings || []));
+      // blocks (by id, then by name)
+      const bmap = {};
+      O.blocks.forEach((b) => {
+        const e = P.blocks.find((x) => x.id === b.id) || P.blocks.find((x) => String(x.name).toLowerCase() === String(b.name).toLowerCase());
+        if (e) { bmap[b.id] = e.id; if (b.invoiceDesc && !e.invoiceDesc) e.invoiceDesc = b.invoiceDesc; } else { P.blocks.push(clone(b)); bmap[b.id] = b.id; }
+      });
+      const B = (id) => bmap[id] || id;
+      O.categories.forEach((c) => { if (!P.categories.find((x) => x.id === c.id)) P.categories.push(clone(c)); });
+      // items
+      const km = {}; P.items.forEach((it) => { km[itemKey(it)] = it.id; });
+      let maxW = Math.max(0, ...P.items.map((it) => +((String(it.id).match(/^w(\d+)$/) || [])[1] || 0)));
+      const imap = {};
+      O.items.forEach((it) => { const k = itemKey(it); if (km[k] && String(it.cat).includes('__')) { const e = P.items.find((x) => x.id === km[k]); if (e && e.cat !== it.cat) e.cat = it.cat; }
+        if (km[k]) imap[it.id] = km[k]; else { const nid = 'w' + (++maxW); P.items.push(Object.assign(clone(it), { id: nid })); km[k] = nid; imap[it.id] = nid; report.newItems++; } });
+      // versions: match each rate line to a version of the same work-order section with the same rate
+      const Pv = (id) => P.versions.find((v) => v.id === id); const Ov = (id) => O.versions.find((v) => v.id === id);
+      O.versions.filter((v) => !v.mergeInto).forEach((v) => {
+        const e = Pv(v.id);
+        if (!e) P.versions.push(Object.assign(clone(v), { rates: {}, labels: {}, lines: [] }));
+        else { if (!e.date && v.date) e.date = v.date; if (v.heading && !e.heading) e.heading = v.heading; if (v.name && /^Revision \d+$/.test(e.name || '')) e.name = v.name; }
+      });
+      const newChild = (sec) => { const m = Pv(sec); let n = 1; while (Pv(sec + 'p' + n)) n++; const c = { id: sec + 'p' + n, name: (m.name || sec) + ' – earlier rate' + (n > 1 ? ' ' + n : ''), date: m.date, heading: '', rates: {}, labels: {}, lines: [], suffix: '', mergeInto: sec }; P.versions.push(c); return c; };
+      const addLine = (sec, vid, wi, before) => { const m = Pv(sec); m.lines = m.lines || []; if (m.lines.some(([a, b]) => a === vid && b === wi)) return; const i = before ? m.lines.findIndex(([a, b]) => a === sec && b === wi) : -1; if (i >= 0) m.lines.splice(i, 0, [vid, wi]); else m.lines.push([vid, wi]); };
+      const remapQty = (map, sec, child, wi) => { Object.keys(map || {}).forEach((bl) => { const q = map[bl][sec] && map[bl][sec][wi]; if (q) { map[bl][child] = map[bl][child] || {}; map[bl][child][wi] = (map[bl][child][wi] || 0) + q; delete map[bl][sec][wi]; } }); };
+      const vmap = {};
+      O.versions.filter((v) => !v.mergeInto).forEach((v) => (v.lines || []).forEach(([cv, wi]) => {
+        const src = Ov(cv); const rate = src.rates[wi]; const label = (src.labels || {})[wi]; const pw = imap[wi]; const sec = v.id;
+        const group = P.versions.filter((x) => x.id === sec || x.mergeInto === sec);
+        const found = group.find((x) => x.rates[pw] !== undefined && x.rates[pw] !== null && Math.abs(x.rates[pw] - rate) < 1e-9);
+        if (found) { vmap[cv + '|' + wi] = found.id; addLine(sec, found.id, pw); return; }
+        const main = Pv(sec);
+        if (cv === sec) {
+          if (main.rates[pw] !== undefined && main.rates[pw] !== null) {
+            // a new current rate for this coat: the old rate moves to an "earlier rate" version, already-billed quantities with it
+            const ch = newChild(sec); ch.rates[pw] = main.rates[pw]; if (main.labels && main.labels[pw]) ch.labels[pw] = main.labels[pw];
+            bills.forEach((b) => { if (b.frozen && b.frozen.qty) { remapQty(b.frozen.qty, sec, ch.id, pw); chB.add(b.id); } });
+            if (P.opening && P.opening.blocks) remapQty(P.opening.blocks, sec, ch.id, pw);
+            addLine(sec, ch.id, pw, true);
+          }
+          main.rates[pw] = rate; main.labels = main.labels || {}; if (label) main.labels[pw] = label; else delete main.labels[pw];
+          addLine(sec, sec, pw); vmap[cv + '|' + wi] = sec;
+        } else {
+          const ch = newChild(sec); ch.rates[pw] = rate; if (label) ch.labels[pw] = label; addLine(sec, ch.id, pw, true); vmap[cv + '|' + wi] = ch.id;
+        }
+      }));
+      const mapQty = (q) => { const out = {}; Object.keys(q || {}).forEach((bl) => Object.keys(q[bl]).forEach((v) => Object.keys(q[bl][v]).forEach((wi) => { const val = q[bl][v][wi]; if (!val) return; const pb = B(bl); const pv = vmap[v + '|' + wi] || v; const pw = imap[wi] || wi; out[pb] = out[pb] || {}; out[pb][pv] = out[pb][pv] || {}; out[pb][pv][pw] = (out[pb][pv][pw] || 0) + val; }))); return out; };
+      if (!live().length && (!P.opening || !Object.keys(P.opening.blocks || {}).length) && O.opening && Object.keys(O.opening.blocks || {}).length) P.opening = Object.assign(clone(O.opening), { blocks: mapQty(O.opening.blocks) });
+      if (isLatest) {
+        const g = {}; Object.keys(O.gfc || {}).forEach((bl) => Object.keys(O.gfc[bl]).forEach((wi) => { const pb = B(bl); g[pb] = g[pb] || {}; g[pb][imap[wi] || wi] = O.gfc[bl][wi]; })); if (Object.keys(g).length) P.gfc = g;
+        if (O.tplMap) { P.tplMap = {}; Object.keys(O.tplMap).forEach((sn) => { P.tplMap[sn] = O.tplMap[sn].map((g) => Object.assign({}, g, { wi: imap[g.wi] || g.wi })); }); }
+        if (O.links && O.links.length && !(P.links || []).length) P.links = O.links.map((l) => Object.assign({}, l, { target: imap[l.target] || l.target, source: imap[l.source] || l.source }));
+        ['employer', 'description', 'soNo', 'woDate', 'sac', 'invoiceRows'].forEach((k) => { if (O[k] && (typeof O[k] !== 'object' || (O[k].name))) P[k] = O[k]; });
+      }
+      // locations
+      const sidx = {}; sections.forEach((s) => { sidx[secKey(s)] = s; });
+      const smap = {};
+      one.sections.forEach((s1) => {
+        const bid = B(s1.blockId); const k = `${bid}|${String(s1.name).toLowerCase()}|${s1.floor || ''}`; let s = sidx[k];
+        const rows1 = (s1.rows || []).map((r) => Object.assign({}, r, { cat: r.cat }));
+        if (!s) { s = Object.assign(clone(s1), { id: `s_${P.id}_${stamp}_${++nNew}`, blockId: bid, rows: rows1.map((r, i) => Object.assign(r, { id: 'm' + i })) }); sections.push(s); sidx[k] = s; chS.add(s.id); report.newSections++; }
+        else {
+          const keep = (s.rows || []).filter((r) => !/^quantity abstract/i.test(r.desc || ''));
+          const have = new Set((s.rows || []).map((r) => r.cat));
+          if (isLatest) { s.rows = keep.concat(rows1.map((r, i) => Object.assign(r, { id: 'm' + (keep.length + i) + stamp }))); chS.add(s.id); }
+          else { const add = rows1.filter((r) => !have.has(r.cat)); if (add.length) { s.rows = (s.rows || []).concat(add.map((r, i) => Object.assign(r, { id: 'm' + i + stamp }))); chS.add(s.id); } }
+        }
+        smap[s1.id] = s.id;
+      });
+      const secById = {}; sections.forEach((s) => { secById[s.id] = s; });
+      // progress of this bill = every location's cumulative % where it differs from the bill before
+      const abs = {}; const p1 = (one.bills[0] && one.bills[0].progress) || {};
+      Object.keys(p1).forEach((sid1) => Object.keys(p1[sid1]).forEach((wi) => { const sid = smap[sid1]; if (!sid) return; (abs[sid] = abs[sid] || {})[imap[wi] || wi] = p1[sid1][wi]; }));
+      const old = live().find((b) => b.seq === seq) || null;
+      const sortedOld = live().slice().sort((a, b) => a.seq - b.seq);
+      const nextB = sortedOld.find((b) => b.seq > seq) || null;
+      const oldEff = {}; // effective % at this bill before the replacement, for keys the next bill inherits
+      if (old && nextB) { const keys = new Set(); [old.progress || {}, abs].forEach((m) => Object.keys(m).forEach((sid) => Object.keys(m[sid]).forEach((wi) => keys.add(sid + '\u0001' + wi)))); keys.forEach((k) => { const [sid, wi] = k.split('\u0001'); if (secById[sid]) oldEff[k] = C.curPct(secById[sid], wi, old, sortedOld); }); }
+      const prog = {}; const ref = { seq };
+      Object.keys(abs).forEach((sid) => Object.keys(abs[sid]).forEach((wi) => { const e = C.prevPct(secById[sid], wi, ref, sortedOld); if (Math.abs(abs[sid][wi] - e) > 0.004) (prog[sid] = prog[sid] || {})[wi] = abs[sid][wi]; }));
+      const lastVer = P.versions.filter((v) => !v.mergeInto).sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) || a.id.localeCompare(b.id, undefined, { numeric: true })).pop();
+      const nb = Object.assign(old ? clone(old) : { payments: [], status: 'Submitted' }, {
+        id: old ? old.id : `r_${P.id}_${seq}`, projectId: P.id, seq, rabNo: w.inv.rabNo, invoiceNo: w.inv.invoiceNo || (old && old.invoiceNo) || '', invoiceDate: w.inv.invoiceDate || (old && old.invoiceDate) || '',
+        versionId: (old && old.versionId) || (lastVer && lastVer.id), progress: prog, linked: {}, direct: [],
+        imported: { file: w.name, at: new Date().toISOString(), invoice: w.inv.totals }, frozen: { qty: mapQty(one.bills[0].frozen.qty), at: new Date().toISOString(), net: (w.inv.totals.net || {}).cur },
+        notes: (old ? 'Replaced from ' : 'Uploaded from ') + w.name
+      });
+      if (old) { const i = bills.findIndex((b) => b.id === old.id); bills[i] = nb; report.replaced.push(nb.rabNo); } else { bills.push(nb); report.added.push(nb.rabNo); }
+      chB.add(nb.id);
+      if (old && nextB) {
+        const sortedNew = live().slice().sort((a, b) => a.seq - b.seq); const nx = bills.find((b) => b.id === nextB.id);
+        Object.keys(oldEff).forEach((k) => { const [sid, wi] = k.split('\u0001'); const has = nx.progress && nx.progress[sid] && nx.progress[sid][wi] !== undefined && nx.progress[sid][wi] !== null && nx.progress[sid][wi] !== '';
+          if (has) return; const ne = C.curPct(secById[sid], wi, nb, sortedNew); if (Math.abs(ne - oldEff[k]) > 0.004) { nx.progress = nx.progress || {}; (nx.progress[sid] = nx.progress[sid] || {})[wi] = oldEff[k]; chB.add(nx.id); } });
+      }
+      report.files.push({ name: w.name, rab: seq, rabNo: w.inv.rabNo, billId: nb.id, invoice: w.inv.totals, replaced: !!old });
+      if (isLatest) report.latest = { name: w.name, rab: seq, wb: w.wb };
+    });
+    return { project: P, bills: bills.filter((b) => chB.has(b.id)), allBills: bills, sections: sections.filter((s) => chS.has(s.id)), allSections: sections, report };
+  }
+
+  const api = { mergeRab, itemKey, secKey, readInvoice, parseAbstract, abstractSheets, buildProject, readLocations };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.RabImport = api;
 })(typeof window !== 'undefined' ? window : globalThis);
