@@ -233,6 +233,7 @@ const _pBills = pBills;
 // eslint-disable-next-line no-func-assign
 pBills = function (p, c) {
   const hs = histOf(p.id);
+  if (!hs.length && billsOf(p.id).some((b) => b.imported)) return _pBills(p, c); // built from running bills: the bills already carry the history
   const up = `<div class="card"><h2>Uploaded running bills <span class="small muted">(billing history)</span><span class="sp"></span><button class="btn sm a" data-act="uploadBills" data-p="${p.id}">⬆ Upload running bills (.xlsx)</button></h2>
     <p class="small muted" style="margin-top:-6px">Select one or many RAB workbooks at once (e.g. RAB 001 – RAB 045). The app reads each Invoice and quantity abstract, so every flat shows when each coat was billed. For tracking only – amounts are not changed.</p>
     ${hs.length ? `<div class="tw" style="max-height:40vh"><table class="t"><thead><tr><th>RAB</th><th>Invoice</th><th class="n">Gross (current)</th><th class="n">Net (current)</th><th class="n">Locations changed</th><th></th></tr></thead><tbody>
