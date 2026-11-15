@@ -83,11 +83,17 @@ function render() {
   try { out = fn(r); } catch (e) { console.error(e); out = { title: 'Error', html: `<div class="warnbox">Something went wrong: ${esc(e.message)}</div>` }; }
   $('#title').innerHTML = out.title || 'Aarush Estimation';
   // Back on every page: explicit parent if the view gives one, otherwise Home
+  // Back returns to the screen you came from (tab, filters and scroll as you left them); with no history yet
+  // (app just opened on this page) it goes to the page's parent, or Home
   const backTo = out.back || (r.name === 'home' ? null : 'home');
-  $('#back').style.visibility = backTo ? 'visible' : 'hidden';
-  $('#back').onclick = () => { if (backTo) go(backTo); };
+  const canBack = NAVH.length > 1;
+  $('#back').style.visibility = canBack || backTo ? 'visible' : 'hidden';
+  $('#back').onclick = () => { if (NAVH.length > 1) history.back(); else if (backTo) { NAVH.length = 0; go(backTo); } };
   $('#main').innerHTML = out.html;
   if (render._last === location.hash) { window.scrollTo(0, scroll); $$('.tw').forEach((e, i) => { if (tw[i]) { e.scrollLeft = tw[i][0]; e.scrollTop = tw[i][1]; } }); }
+  else if (navRestore && navRestore.h === (location.hash || '#/home')) { const nr = navRestore; window.scrollTo(0, nr.y || 0); $$('.tw').forEach((e, i) => { if (nr.tw && nr.tw[i]) { e.scrollLeft = nr.tw[i][0]; e.scrollTop = nr.tw[i][1]; } }); }
+  else window.scrollTo(0, 0);
+  navRestore = null;
   render._last = location.hash;
   if (focusKey) {
     const el = $(`[data-k="${CSS.escape(focusKey)}"]`);
@@ -101,7 +107,16 @@ function render() {
   Sync.setStatus(Sync.isCloud() ? (Sync.status === 'local' ? 'busy' : Sync.status) : 'local', Sync.msg);
   if (r.name === 'settings') loadMembers();
 }
-window.addEventListener('hashchange', render);
+/* screen history for Back: each entry keeps where you were scrolled */
+const NAVH = [{ h: location.hash || '#/home' }]; let navRestore = null;
+window.addEventListener('hashchange', () => {
+  const h = location.hash || '#/home';
+  const top = NAVH[NAVH.length - 1];
+  if (top && top.h === render._last) { top.y = window.scrollY; top.tw = $$('.tw').map((e) => [e.scrollLeft, e.scrollTop]); }
+  if (NAVH.length >= 2 && NAVH[NAVH.length - 2].h === h) { NAVH.pop(); navRestore = NAVH[NAVH.length - 1]; }
+  else if (!top || top.h !== h) { NAVH.push({ h }); navRestore = null; }
+  render();
+});
 function onRemoteChange() { resetCalc(); const a = document.activeElement; if (a && /INPUT|TEXTAREA|SELECT/.test(a.tagName) && $('#main').contains(a)) { onRemoteChange.pending = true; return; } render(); }
 document.addEventListener('focusout', () => { if (onRemoteChange.pending) { onRemoteChange.pending = false; setTimeout(render, 50); } });
 
