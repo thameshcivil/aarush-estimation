@@ -244,7 +244,7 @@ pBills = function (p, c) {
 
 /* location page: billing history + link card */
 function historyCardFor(p, s) {
-  const tot = Calc.sectionTotals(s, p); const ibc = Calc.itemsByCat(p); const cm = Calc.catMap(p);
+  const tot = Calc.sectionTotals(s, p); const ibc = itemsByCatUI(p); const cm = Calc.catMap(p);
   const H = histFull(p.id); const bills = billsOf(p.id).filter((b) => b.status !== 'Cancelled');
   const sorted = Calc.sortedBills(billsOf(p.id), p.id);
   const rows = []; let last = null;

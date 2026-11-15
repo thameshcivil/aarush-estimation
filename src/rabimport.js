@@ -639,6 +639,15 @@
         if (O.tplMap) { P.tplMap = {}; Object.keys(O.tplMap).forEach((sn) => { P.tplMap[sn] = O.tplMap[sn].map((g) => Object.assign({}, g, { wi: imap[g.wi] || g.wi })); }); }
         if (O.links && O.links.length && !(P.links || []).length) P.links = O.links.map((l) => Object.assign({}, l, { target: imap[l.target] || l.target, source: imap[l.source] || l.source }));
         ['employer', 'description', 'soNo', 'woDate', 'sac', 'invoiceRows'].forEach((k) => { if (O[k] && (typeof O[k] !== 'object' || (O[k].name))) P[k] = O[k]; });
+        // the newest bill sets the layout: its category names and order, its item headings and order first; items it
+        // dropped stay (old bills use them) after the current ones – the app hides them on the working screens
+        const oc = {}; O.categories.forEach((c, i) => { oc[c.id] = i; });
+        P.categories.forEach((c) => { const o = O.categories.find((x) => x.id === c.id); if (o) { c.name = o.name; if (o.unit) c.unit = o.unit; } });
+        P.categories = P.categories.map((c, i) => ({ c, i })).sort((a, b) => ((oc[a.c.id] ?? 1e6 + a.i) - (oc[b.c.id] ?? 1e6 + b.i))).map((x) => x.c);
+        const oi = {}; O.items.forEach((it, i) => { const pw = imap[it.id]; if (pw) oi[pw] = { i, it }; });
+        P.items.forEach((it) => { const o = oi[it.id]; if (o) { it.group = o.it.group; if (o.it.gid) it.gid = o.it.gid; if (o.it.unit) it.unit = o.it.unit; } });
+        P.items = P.items.map((it, i) => ({ it, i })).sort((a, b) => ((oi[a.it.id] ? oi[a.it.id].i : 1e6 + a.i) - (oi[b.it.id] ? oi[b.it.id].i : 1e6 + b.i))).map((x) => x.it);
+        P.latestItems = Object.keys(oi); // items of the newest uploaded bill
       }
       // locations
       const sidx = {}; sections.forEach((s) => { sidx[secKey(s)] = s; });

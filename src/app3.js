@@ -142,7 +142,7 @@ function vSection(r) {
   const raw = Store.get(r.a); if (!raw) return { title: 'Not found', html: '<div class="empty">Location not found.</div>', back: 'contractors' };
   const p = proj(raw.projectId); const blk = blockOf(p, raw.blockId);
   const all = sectionsOf(p.id); const s = all.find((x) => x.id === raw.id) || raw;
-  const cm = Calc.catMap(p); const tot = Calc.sectionTotals(s, p); const ibc = Calc.itemsByCat(p);
+  const cm = Calc.catMap(p); const tot = Calc.sectionTotals(s, p); const ibc = itemsByCatUI(p);
   const linked = !!s._linked; const tpl = linked ? Store.get(raw.templateId) : null;
   const rows = s.rows || []; const ro = linked ? 'disabled' : '';
   const temps = all.filter((x) => x.blockId === raw.blockId && x.isTemplate && x.id !== raw.id);
@@ -195,7 +195,7 @@ function vSection(r) {
 function flatStatus(p, s) {
   const bs = billsOf(p.id).filter((b) => b.status !== 'Cancelled'); const last = bs[bs.length - 1];
   const bill = last || { id: '_open', projectId: p.id, seq: -1e9, progress: {} };
-  const sorted = Calc.sortedBills(billsOf(p.id), p.id); const cm = Calc.catMap(p); const ibc = Calc.itemsByCat(p); const tot = Calc.sectionTotals(s, p);
+  const sorted = Calc.sortedBills(billsOf(p.id), p.id); const cm = Calc.catMap(p); const ibc = itemsByCatUI(p); const tot = Calc.sectionTotals(s, p);
   let done = 0, cnt = 0;
   const rows = Object.keys(tot).map((k) => (ibc[k] || []).map((it, i) => {
     const pc = Calc.curPct(s, it.id, bill, sorted); const pv = Calc.prevPct(s, it.id, bill, sorted); done += Math.min(pc, 100); cnt++;
@@ -216,10 +216,11 @@ function progressRows(p, blockId, cat) {
 }
 function bProgress(b, p, c, res, ed) {
   if (!(p.blocks || []).length) return '<div class="empty">No blocks.</div>';
-  const bc = blockChips(p, 'block'); const blk = blockOf(p, bc.cur); const cm = Calc.catMap(p); const ibc = Calc.itemsByCat(p);
+  const bc = blockChips(p, 'block'); const blk = blockOf(p, bc.cur); const cm = Calc.catMap(p); const ibc = itemsByCatUI(p);
   const blockSecs = sectionsOf(p.id).filter((s) => s.blockId === bc.cur && !s.isTemplate);
   const catIds = []; blockSecs.forEach((s) => Object.keys(Calc.sectionTotals(s, p)).forEach((k) => { if (!catIds.includes(k) && (ibc[k] || []).length) catIds.push(k); }));
   if (!catIds.length) return bc.html + `<div class="card"><div class="empty">No locations with measurements in this block.<br><a href="#/project/${p.id}/measure">Add measurements</a> or use <a href="#/bill/${b.id}/direct">Direct qty</a> for this bill.</div></div>`;
+  const oldNote = oldItemsNote(p);
   const cur = catIds.includes(UI.cat[p.id]) ? UI.cat[p.id] : catIds[0];
   const its = ibc[cur] || []; const sorted = res.state.sorted; const vrates = ((p.versions || []).find((v) => v.id === b.versionId) || { rates: {} }).rates;
   const rows = progressRows(p, bc.cur, cur);
@@ -232,7 +233,7 @@ function bProgress(b, p, c, res, ed) {
     ${its.map((it) => { const pv = Calc.prevPct(s, it.id, b, sorted); const cv = Calc.curPct(s, it.id, b, sorted); const has = b.progress && b.progress[s.id] && b.progress[s.id][it.id] !== undefined; const lnk = has && b.linked && b.linked[s.id] && b.linked[s.id][it.id]; return `<td class="n pct"><input class="num" title="${lnk ? 'Filled from the linked master coat – type to override' : ''}" style="width:62px;${lnk ? 'background:#e8f1fb;color:#1d5f99;font-weight:600' : has && cv !== pv ? 'background:#eaf6ee;font-weight:600' : ''}" type="number" step="any" min="0" max="100" value="${has ? esc(+cv.toFixed(2)) : ''}" placeholder="${+pv.toFixed(1)}" ${ed ? '' : 'disabled'} data-ch="pct" data-b="${b.id}" data-s="${s.id}" data-w="${it.id}" data-k="p${s.id}${it.id}"><small>${lnk ? '🔗 ' : ''}prev ${+pv.toFixed(1)}%</small></td>`; }).join('')}</tr>`;
   }).join('');
   const bulk = ed ? `<tr style="background:#fbfcfd"><td class="stick small"><b>Set for all ${rows.length} shown</b><div class="muted">blank = clear</div></td><td></td>${its.map((it) => `<td class="n"><input class="num" style="width:56px" type="number" step="any" min="0" max="100" data-k="bulk${it.id}" placeholder="%"><div><a href="#" class="small" data-act="pctBulk" data-b="${b.id}" data-p="${p.id}" data-bl="${bc.cur}" data-c="${cur}" data-w="${it.id}">apply</a></div></td>`).join('')}</tr>` : '';
-  return bc.html + `<div class="chips">${catIds.map((k) => `<button class="chip ${k === cur ? 'on' : ''}" data-act="ui" data-key="cat" data-p="${p.id}" data-v="${k}">${esc((cm[k] || {}).name || k)}</button>`).join('')}</div>
+  return bc.html + `<div class="chips">${catIds.map((k) => `<button class="chip ${k === cur ? 'on' : ''}" data-act="ui" data-key="cat" data-p="${p.id}" data-v="${k}">${esc((cm[k] || {}).name || k)}</button>`).join('')}</div>${oldNote}
   <div class="card"><h2>Cumulative % complete – ${esc((cm[cur] || {}).name || cur)} <span class="small muted">(${esc((cm[cur] || {}).unit || '')})</span></h2>
   <p class="small muted" style="margin-top:-6px">Enter cumulative % done up to this bill. Blank = same as previous bill. Filter by pore, series or floor, then use “Set for all shown” to fill a whole pore, series or floor at once.
   ${(p.links || []).length ? `<span style="color:#1d5f99">🔗 Blue cells are filled from linked master coats (Items &amp; Rates → Linked progress); type over one to override it.</span> ${ed ? `<a href="#" data-act="relink" data-b="${b.id}">Re-apply links</a>` : ''}` : `Tip: set up <a href="#/project/${p.id}/rates" data-act="goLinks">linked progress</a> so Wall, Door, Grill… fill from Internal Ceiling.`}</p>
@@ -281,7 +282,7 @@ function reportData(p, blockId, cat, by) {
 }
 function pReport(p) {
   if (!(p.blocks || []).length) return '<div class="empty">No blocks.</div>';
-  const bc = blockChips(p, 'block'); const blk = blockOf(p, bc.cur); const cm = Calc.catMap(p); const ibc = Calc.itemsByCat(p);
+  const bc = blockChips(p, 'block'); const blk = blockOf(p, bc.cur); const cm = Calc.catMap(p); const ibc = itemsByCatUI(p);
   const secs = sectionsOf(p.id).filter((s) => s.blockId === bc.cur && !s.isTemplate);
   const catIds = []; secs.forEach((s) => Object.keys(Calc.sectionTotals(s, p)).forEach((k) => { if (!catIds.includes(k) && (ibc[k] || []).length) catIds.push(k); }));
   if (!catIds.length) return bc.html + '<div class="card"><div class="empty">No measured locations in this block yet.</div></div>';
@@ -319,7 +320,7 @@ ACT.repDrill = (el) => {
   render();
 };
 ACT.repExport = async (el) => {
-  const p = proj(el.dataset.p); const blk = blockOf(p, el.dataset.b); const cm = Calc.catMap(p); const ibc = Calc.itemsByCat(p);
+  const p = proj(el.dataset.p); const blk = blockOf(p, el.dataset.b); const cm = Calc.catMap(p); const ibc = itemsByCatUI(p);
   const by = UI.rep.by || 'pore'; const { bill } = reportAsOf(p); const c = Store.get(p.contractorId) || {};
   const secs = sectionsOf(p.id).filter((s) => s.blockId === blk.id && !s.isTemplate);
   const catIds = []; secs.forEach((s) => Object.keys(Calc.sectionTotals(s, p)).forEach((k) => { if (!catIds.includes(k) && (ibc[k] || []).length) catIds.push(k); }));

@@ -361,7 +361,7 @@ ACT.pasteSections = async (el) => {
     <label class="f">Category<select name="cat">${p.categories.map((c) => `<option value="${c.id}">${esc(c.name)} (${esc(c.unit)})</option>`).join('')}</select></label>
     <label class="f" style="margin-top:10px">Rows<textarea name="t" rows="8" placeholder="Flat 101&#9;1250.5&#9;100"></textarea></label>`, [['cancel', 'Cancel'], ['ok', 'Create sections', 'p']]);
   if (r.action !== 'ok') return;
-  const ibc = Calc.itemsByCat(p); let n = 0; const existing = rawSections(p.id).filter((s) => s.blockId === el.dataset.b);
+  const ibc = itemsByCatUI(p); let n = 0; const existing = rawSections(p.id).filter((s) => s.blockId === el.dataset.b);
   parsePaste(r.values.t).forEach((a) => {
     if (!a[0] || N(a[1]) === null) return;
     let s = existing.find((x) => x.name.toLowerCase() === a[0].toLowerCase());
@@ -384,14 +384,16 @@ ACT.rateTab = (el) => { UI.rateTab = el.dataset.v; render(); };
 const versionsSorted = (p) => (p.versions || []).slice().sort((a, b) => String(a.date).localeCompare(String(b.date)) || (a.mergeInto ? 1 : 0) - (b.mergeInto ? 1 : 0));
 function rItems(p) {
   const vs = versionsSorted(p); const groups = []; (p.items || []).forEach((i) => { if (!groups.includes(i.group)) groups.push(i.group); });
+  const curSet = currentItems(p);
   return `<div class="card"><h2>Work items & rates<span class="sp"></span><button class="btn sm p" data-act="itemAdd" data-p="${p.id}">+ Item</button></h2>
-  <p class="small muted" style="margin-top:-6px">One row per coat / activity. Leave a rate blank if the item is not in that work-order version. The category links the item to measurements.</p>
-  <div class="tw"><table class="t"><thead><tr><th class="stick">Description</th><th>Group</th><th>Unit</th><th>Category</th>${vs.map((v) => `<th class="n">${esc(v.name)}<div class="small muted">${fmtD(v.date)}</div></th>`).join('')}<th></th></tr></thead><tbody>
-  ${groups.map((g) => `<tr class="grp"><td class="stick" colspan="${5 + vs.length}">${esc(g)}</td></tr>` + (p.items || []).filter((i) => i.group === g).map((it) => `<tr>
-    <td class="stick"><input type="text" style="min-width:260px" value="${esc(it.desc)}" data-ch="item" data-p="${p.id}" data-w="${it.id}" data-f="desc"></td>
+  <p class="small muted" style="margin-top:-6px">One row per coat / activity. Leave a rate blank if the item is not in that work-order version. The category links the item to measurements. <b>Show</b>: “Auto” shows the items of the latest running bill and hides the ones it dropped; old bills keep their amounts either way.</p>
+  <div class="tw"><table class="t"><thead><tr><th class="stick">Description</th><th>Group</th><th>Unit</th><th>Category</th><th title="Shown on the bill screens: Auto = as in the latest running bill">Show</th>${vs.map((v) => `<th class="n">${esc(v.name)}<div class="small muted">${fmtD(v.date)}</div></th>`).join('')}<th></th></tr></thead><tbody>
+  ${groups.map((g) => `<tr class="grp"><td class="stick" colspan="${6 + vs.length}">${esc(g)}</td></tr>` + (p.items || []).filter((i) => i.group === g).map((it) => `<tr style="${curSet.has(it.id) ? '' : 'opacity:.55'}">
+    <td class="stick"><input type="text" style="min-width:260px" value="${esc(it.desc)}" data-ch="item" data-p="${p.id}" data-w="${it.id}" data-f="desc">${curSet.has(it.id) ? '' : '<div class="small muted">old item – not in the latest bill</div>'}</td>
     <td><input type="text" style="min-width:170px" value="${esc(it.group)}" data-ch="item" data-p="${p.id}" data-w="${it.id}" data-f="group"></td>
-    <td><select data-ch="item" data-p="${p.id}" data-w="${it.id}" data-f="unit">${['SqFt', 'Rft', 'Nos', 'SqM', 'Rmt', 'Cum', 'LS'].map((u) => `<option ${u === it.unit ? 'selected' : ''}>${u}</option>`).join('')}</select></td>
+    <td><select style="min-width:78px" data-ch="item" data-p="${p.id}" data-w="${it.id}" data-f="unit">${['SqFt', 'Rft', 'Nos', 'SqM', 'Rmt', 'Cum', 'LS'].map((u) => `<option ${u === it.unit ? 'selected' : ''}>${u}</option>`).join('')}</select></td>
     <td><select style="min-width:150px" data-ch="item" data-p="${p.id}" data-w="${it.id}" data-f="cat"><option value="">–</option>${p.categories.map((c) => `<option value="${c.id}" ${c.id === it.cat ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></td>
+    <td><select style="min-width:132px" data-ch="itemShow" data-p="${p.id}" data-w="${it.id}"><option value="auto" ${!it.show ? 'selected' : ''}>Auto (${curSet.has(it.id) && it.show !== 'on' ? 'shown' : it.show === 'on' ? 'shown' : 'hidden'})</option><option value="on" ${it.show === 'on' ? 'selected' : ''}>Always show</option><option value="off" ${it.show === 'off' ? 'selected' : ''}>Hide</option></select></td>
     ${vs.map((v) => `<td class="n"><input class="num" type="number" step="any" value="${esc(v.rates[it.id] ?? '')}" data-ch="rate" data-p="${p.id}" data-v="${v.id}" data-w="${it.id}" data-k="rt${v.id}${it.id}"></td>`).join('')}
     <td><button class="btn sm ghost d" data-act="itemDel" data-p="${p.id}" data-w="${it.id}">✕</button></td></tr>`).join('')).join('')}
   </tbody></table></div></div>`;
