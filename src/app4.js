@@ -78,7 +78,7 @@ function templateLinks(p) {
   });
   return out;
 }
-const linkRules = (p) => (p.links || []).filter((l) => l.source && l.target && l.source !== l.target);
+function linkRules(p) { return (p.links || []).filter((l) => l.source && l.target && l.source !== l.target); }
 
 /**
  * Re-compute linked coats for the given locations of a bill.

@@ -108,7 +108,7 @@
     }
     if (best !== null) return best;
     const o = section.openingPct && section.openingPct[wi];
-    return num(o) || 0;
+    return Math.min(100, num(o) || 0); // some workbooks billed above 100% – never carry more than 100% forward
   }
 
   function curPct(section, wi, bill, billsSorted) {
