@@ -62,7 +62,7 @@ ACT.uploadRab = async (el) => {
   let out;
   try { out = RabImport.mergeRab(ex, wbs.map((w) => ({ name: w.name, wb: w.wb }))); } catch (e) { toast(''); await dialog('Could not read the bill', `<div class="warnbox">${esc(e.message)}</div>`, [['cancel', 'Close']]); return; }
   toast('', 1);
-  const { project, allBills, allSections, report } = out;
+  let { project, allBills, allSections, report } = out;
   const okMark = (a, b) => (a === null || b === null || b === undefined) ? '<span class="muted">–</span>' : (Math.abs(a - b) <= 2 ? '<span style="color:#1a7f37">✓</span>' : `<span style="color:#c62828">✗ ${inr(a - b)}</span>`);
   const rows = report.files.map((f) => {
     const b = allBills.find((x) => x.id === f.billId); let res = null; try { res = Calc.computeBill(project, allSections, allBills, b); } catch (e) { /* – */ }
@@ -88,6 +88,10 @@ ACT.uploadRab = async (el) => {
   const r = await dialog(`Upload running bill – ${p.name}`, body, report.files.length ? [['cancel', 'Cancel'], ['ok', 'Save', 'p']] : [['cancel', 'Close']]);
   if (r.action !== 'ok') return;
   const formatOnly = r.values.mode === 'format';
+  if (formatOnly) { // a format file must not touch any bill's figures: read it again without the "previous" corrections
+    try { out = RabImport.mergeRab(ex, wbs.map((w) => ({ name: w.name, wb: w.wb })), { noPrevFix: true }); } catch (e) { toast(e.message); return; }
+    ({ project, allBills, allSections, report } = out);
+  }
   // format only: the bills made from the file are dropped; bills only re-filed under a rate split (if any) are kept
   const fileBills = new Set(report.files.map((f) => f.billId));
   const billsToSave = formatOnly ? out.bills.filter((b) => !fileBills.has(b.id)) : out.bills;

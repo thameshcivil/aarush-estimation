@@ -598,7 +598,8 @@
    * ex = {project, bills, sections} (all of this project). files = [{name, wb}].
    * Returns {project, bills (changed), sections (changed), report}
    */
-  function mergeRab(ex, files) {
+  function mergeRab(ex, files, opt) {
+    opt = opt || {};
     const P = clone(ex.project); const bills = clone(ex.bills || []); const sections = clone(ex.sections || []);
     P.items = P.items || []; P.categories = P.categories || []; P.versions = P.versions || []; P.blocks = P.blocks || [];
     const chB = new Set(); const chS = new Set(); const stamp = Date.now().toString(36); let nNew = 0;
@@ -707,7 +708,7 @@
       // progress of this bill = every location's cumulative % where it differs from the bill before
       const abs = {}; const p1 = (one.bills[0] && one.bills[0].progress) || {};
       Object.keys(p1).forEach((sid1) => Object.keys(p1[sid1]).forEach((wi) => { const sid = smap[sid1]; if (!sid) return; (abs[sid] = abs[sid] || {})[imap[wi] || wi] = p1[sid1][wi]; }));
-      { // the workbook's "Upto previous" = what the bill before must show; fix an uploaded (frozen) bill before it that read differently
+      if (!opt.noPrevFix) { // the workbook's "Upto previous" = what the bill before must show; fix an uploaded (frozen) bill before it that read differently
         const pl = one.report.prevLatest || {}; const before = live().filter((b) => b.seq < seq).sort((a, b) => a.seq - b.seq); const pb = before[before.length - 1]; const ref0 = { seq };
         Object.keys(pl).forEach((sid1) => { const sid = smap[sid1]; const sec = sid && secById[sid]; if (!sec) return; Object.keys(pl[sid1]).forEach((wi1) => { const wi = imap[wi1] || wi1; const v = pl[sid1][wi1];
           const e = C.prevPct(sec, wi, ref0, before); if (Math.abs(v - e) <= 0.004) return;
