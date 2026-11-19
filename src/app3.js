@@ -17,7 +17,7 @@ function elevOf(s) {
 }
 /* notes on a location (Excel comments / Remarks from the workbook, or added here); cat = only that category's and general ones */
 function notesHtml(s, cat) {
-  const ns = (s.notes || []).filter((n) => !n.wi && (!cat || !n.cat || n.cat === cat)); if (!ns.length) return ''; // a note on a coat's cell shows at that coat
+  const ns = (s.notes || []).filter((n) => !n.wi); if (!ns.length) return ''; // a note on a coat's cell shows at that coat
   return ns.map((n) => `<div class="lnote" title="${esc((n.sheet ? n.sheet + (n.cell ? ' ' + n.cell : '') : 'Added in the app'))}">📝 ${esc(n.text)}</div>`).join('');
 }
 /* notes on one coat of a location: the comments written on that coat's cells */
@@ -26,6 +26,13 @@ function coatNotes(p, s, wi) {
   return ns.filter((n) => n.wi === wi);
 }
 const coatNoteHtml = (p, s, wi) => coatNotes(p, s, wi).map((n) => `<span class="cnote" title="${esc(n.sheet ? n.sheet + ' ' + (n.cell || '') : '')}">📝 ${esc(n.text)}</span>`).join('');
+/* every note of a location, from every sheet, with the coat it is on */
+function allNotes(p, s, cm) {
+  const ns = s.notes || []; if (!ns.length) return '';
+  const im = {}; (p.items || []).forEach((i) => { im[i.id] = i; });
+  return `<div class="xnotes">${ns.map((n) => { const it = n.wi && im[n.wi]; const where = it ? ((cm[it.cat] || cm[n.cat] || {}).name || '') + ' · ' + String(it.desc).replace(/^Painting\s*/, '') : (n.cat ? (cm[n.cat] || {}).name || n.cat : 'Whole location');
+    return `<div class="lnote">📝 <b>${esc(n.text)}</b> <span class="muted">– ${esc(where)}${n.sheet ? ' (' + esc(n.sheet) + (n.cell ? ' ' + esc(n.cell) : '') + ')' : ''}</span></div>`; }).join('')}</div>`;
+}
 /* label under a location: its pore/core, or for common areas its elevation */
 function locSub(s, blk) { const p = Calc.sectionPore(s, blk); return p === 'Common' && s.kind !== 'flat' ? (elevOf(s) || p) : p; }
 
@@ -264,7 +271,7 @@ function zonePanel(b, p, s, zone, sorted, ed, ibc, cm, cols) {
     ${ibc[k].map((it) => { const pv = Calc.prevPct(s, it.id, b, sorted); const cv = Calc.curPct(s, it.id, b, sorted); const has = b.progress && b.progress[s.id] && b.progress[s.id][it.id] !== undefined; const lnk = has && b.linked && b.linked[s.id] && b.linked[s.id][it.id];
       return `<label class="xit"><span>${esc(it.desc.replace(/^Painting\s*/, '').replace(/^\{[^}]*\}\s*-\s*/, ''))}${vr[it.id] === undefined ? ' <i style="color:var(--bad)">no rate</i>' : ''}</span><input class="num" type="number" step="any" min="0" max="100" style="width:66px;${lnk ? 'background:#e8f1fb;color:#1d5f99;font-weight:600' : has && cv !== pv ? 'background:#eaf6ee;font-weight:600' : ''}" value="${has ? esc(+cv.toFixed(2)) : ''}" placeholder="${+pv.toFixed(1)}" ${ed ? '' : 'disabled'} data-ch="pct" data-b="${b.id}" data-s="${s.id}" data-w="${it.id}" data-k="x${s.id}${it.id}"><small>prev ${+pv.toFixed(1)}%</small>${coatNoteHtml(p, s, it.id)}</label>`; }).join('')}</div></div>`).join('');
   const all = ed ? `<div class="xall"><span class="small">Set every ${ZONES[zone]} coat here to</span><input class="num" style="width:66px" type="number" step="any" min="0" max="100" placeholder="%" data-k="xa${s.id}"><button class="btn sm" data-act="xpAll" data-b="${b.id}" data-s="${s.id}" data-z="${zone}">Apply</button><span class="small muted">(coats already above stay)</span></div>` : '';
-  return `<tr class="xrow"><td colspan="${cols}"><div class="xwrap"><div class="small muted" style="margin-bottom:6px">All ${ZONES[zone]} items – ${esc(s.name)}</div>${all}${blocks}</div></td></tr>`;
+  return `<tr class="xrow"><td colspan="${cols}"><div class="xwrap"><div class="small muted" style="margin-bottom:6px">All ${ZONES[zone]} items – ${esc(s.name)}</div>${allNotes(p, s, cm)}${all}${blocks}</div></td></tr>`;
 }
 ACT.xpAll = (el) => {
   const b = Store.get(el.dataset.b); const s = Store.get(el.dataset.s); const p = proj(b.projectId);

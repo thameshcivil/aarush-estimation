@@ -278,8 +278,8 @@ function vProject(r) {
   const p = proj(r.a); if (!p) return { title: 'Not found', html: '<div class="empty">Project not found.</div>', back: 'contractors' };
   const c = Store.get(p.contractorId) || {};
   const tab = r.b || 'bills';
-  const tabs = [['bills', 'Bills'], ['measure', 'Measurements'], ['report', 'Progress report'], ['rates', 'Items & Rates'], ['setup', 'Project setup']];
-  const body = { bills: pBills, measure: pMeasure, report: pReport, rates: pRates, setup: pSetup }[tab](p, c);
+  const tabs = [['bills', 'Bills'], ['measure', 'Measurements'], ['report', 'Progress report'], ['notes', 'Notes'], ['rates', 'Items & Rates'], ['setup', 'Project setup']];
+  const body = { bills: pBills, measure: pMeasure, report: pReport, notes: pNotes, rates: pRates, setup: pSetup }[tab](p, c);
   return { title: `${esc(p.name)} <span class="sub">· ${esc(c.name || '')}</span>`, back: 'contractor/' + p.contractorId,
     html: `<div class="tabs">${tabs.map(([k, l]) => `<a href="#/project/${p.id}/${k}" class="${k === tab ? 'on' : ''}">${l}</a>`).join('')}</div>${body}` };
 }

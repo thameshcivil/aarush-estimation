@@ -87,3 +87,22 @@ ACT.tbExport = async (el) => {
   const m = document.getElementById('main'); if (m && window.MutationObserver) new MutationObserver(fix).observe(m, { childList: true, subtree: true });
   window.addEventListener('resize', fix);
 })();
+
+/* project → Notes: every note of every location (workbook comments, Remarks, and notes added here) */
+function pNotes(p) {
+  const cm = Calc.catMap(p); const im = {}; (p.items || []).forEach((i) => { im[i.id] = i; });
+  const q = (UI.notesQ || '').toLowerCase();
+  const rows = []; sectionsOf(p.id).forEach((s) => (s.notes || []).forEach((n) => { const it = n.wi && im[n.wi];
+    const where = it ? ((cm[it.cat] || cm[n.cat] || {}).name || '') + ' · ' + String(it.desc).replace(/^Painting\s*/, '') : (n.cat ? (cm[n.cat] || {}).name || n.cat : 'Whole location');
+    const blk = blockOf(p, s.blockId) || {}; const r = { s, n, where, blk: blk.name || '' };
+    if (!q || (s.name + ' ' + n.text + ' ' + where + ' ' + (n.sheet || '')).toLowerCase().includes(q)) rows.push(r); }));
+  rows.sort((a, b) => String(a.blk).localeCompare(String(b.blk), undefined, { numeric: true }) || secSort(a.s, b.s));
+  let last = null;
+  return `<div class="card"><h2>Notes <span class="small muted">(${rows.length})</span><span class="sp"></span><input type="search" placeholder="Search notes…" data-ch="notesQ" data-live data-k="search-notes" value="${esc(UI.notesQ || '')}" style="max-width:240px"></h2>
+    <p class="small muted" style="margin-top:-6px">Comments written on cells in your workbook and text in a Remarks column come in when you upload it; you can also add notes on a location’s page.</p>
+    ${rows.length ? `<div class="tw" style="max-height:70vh"><table class="t"><thead><tr><th>Location</th><th>Note</th><th>On</th><th>From</th></tr></thead><tbody>
+    ${rows.map((r) => { const h = r.blk !== last ? `<tr class="grp"><td colspan="4">${esc(r.blk)}</td></tr>` : ''; last = r.blk;
+      return h + `<tr><td><a href="#/section/${r.s.id}"><b>${esc(r.s.name)}</b></a><div class="small muted">${esc(locSub(r.s, blockOf(p, r.s.blockId)))} · ${esc(r.s.floor || '')}</div></td><td style="color:#a8550f;font-weight:600">📝 ${esc(r.n.text)}</td><td class="small">${esc(r.where)}</td><td class="small muted">${esc(r.n.sheet ? r.n.sheet + ' ' + (r.n.cell || '') : 'added here')}</td></tr>`; }).join('')}
+    </tbody></table></div>` : '<div class="empty">No notes yet.</div>'}</div>`;
+}
+CH.notesQ = (el) => { UI.notesQ = el.value; render(); };
