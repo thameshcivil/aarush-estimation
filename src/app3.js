@@ -70,7 +70,15 @@ function filterBar(st, p, blk, secs, opts) {
 CH.lf = (el) => { UI[el.dataset.st][el.dataset.f] = el.value; render(); };
 ACT.lfClear = (el) => { UI[el.dataset.st] = {}; render(); };
 const LIMIT = 300;
-function floorHead(cols, label) { return `<tr class="grp"><td class="stick" colspan="${cols}">${esc(label || '—')}</td></tr>`; }
+UI.fc = UI.fc || {}; // collapsed floors: "block|floor"
+function floorHead(cols, label, key, n) {
+  if (!key) return `<tr class="grp"><td class="stick" colspan="${cols}">${esc(label || '—')}</td></tr>`;
+  const c = !!UI.fc[key];
+  return `<tr class="grp fhead"><td class="stick" colspan="${cols}"><button class="xbtn" data-act="fcTog" data-f="${esc(key)}" title="${c ? 'Expand' : 'Collapse'} this floor">${c ? '▸' : '▾'}</button>${esc(label || '—')}${n ? ` <span class="small muted" style="font-weight:400">· ${n} location${n === 1 ? '' : 's'}</span>` : ''}
+    <span class="small" style="font-weight:400;margin-left:12px"><a href="#" data-act="fcAll" data-v="0">expand all</a> · <a href="#" data-act="fcAll" data-v="1">collapse all</a></span></td></tr>`;
+}
+ACT.fcTog = (el) => { const k = el.dataset.f; if (UI.fc[k]) delete UI.fc[k]; else UI.fc[k] = 1; render(); };
+ACT.fcAll = (el) => { const on = el.dataset.v === '1'; $$('button[data-act="fcTog"]').forEach((b) => { if (on) UI.fc[b.dataset.f] = 1; else delete UI.fc[b.dataset.f]; }); render(); };
 
 /* ================= MEASUREMENTS LIST ================= */
 function pMeasure(p) {
@@ -295,8 +303,10 @@ function bProgress(b, p, c, res, ed) {
   const colTot = its.map(() => 0); let totQ = 0;
   rows.forEach(([s, t]) => { totQ += t[cur]; its.forEach((it, i) => { colTot[i] += t[cur] * (Calc.curPct(s, it.id, b, sorted) - Calc.prevPct(s, it.id, b, sorted)) / 100; }); });
   let lastF = null;
+  const fN = {}; rows.forEach(([s]) => { fN[s.floor] = (fN[s.floor] || 0) + 1; });
   const body = rows.slice(0, LIMIT).map(([s, t]) => {
-    const head = s.floor !== lastF ? floorHead(2 + its.length, s.floor) : ''; lastF = s.floor;
+    const fk = bc.cur + '|' + (s.floor || ''); const head = s.floor !== lastF ? floorHead(2 + its.length, s.floor, fk, fN[s.floor]) : ''; lastF = s.floor;
+    if (UI.fc[fk]) return head;
     const xo = !!UI.xp[s.id];
     return head + `<tr${xo ? ' class="xon"' : ''}><td class="stick"><button class="xbtn" data-act="xpand" data-s="${s.id}" title="All ${ZONES[zoneOf(cm[cur])]} items of this location">${xo ? '▴' : '▾'}</button><a href="#/section/${s.id}">${esc(s.name)}</a><div class="small muted">${esc(locSub(s, blk))}${s.series ? ' · S' + esc(p2(s.series)) : ''}</div>${notesHtml(s, cur)}</td><td class="n">${qf(t[cur])}</td>
     ${its.map((it) => { const pv = Calc.prevPct(s, it.id, b, sorted); const cv = Calc.curPct(s, it.id, b, sorted); const has = b.progress && b.progress[s.id] && b.progress[s.id][it.id] !== undefined; const lnk = has && b.linked && b.linked[s.id] && b.linked[s.id][it.id]; const nt = coatNotes(p, s, it.id).map((x) => x.text).join(' · '); return `<td class="n pct${nt ? ' hasnote' : ''}"><input class="num" title="${nt ? '📝 ' + esc(nt) + (lnk ? ' – ' : '') : ''}${lnk ? 'Filled from the linked master coat – type to override' : ''}" style="width:62px;${lnk ? 'background:#e8f1fb;color:#1d5f99;font-weight:600' : has && cv !== pv ? 'background:#eaf6ee;font-weight:600' : ''}" type="number" step="any" min="0" max="100" value="${has ? esc(+cv.toFixed(2)) : ''}" placeholder="${+pv.toFixed(1)}" ${ed ? '' : 'disabled'} data-ch="pct" data-b="${b.id}" data-s="${s.id}" data-w="${it.id}" data-k="p${s.id}${it.id}"><small>${lnk ? '🔗 ' : ''}prev ${+pv.toFixed(1)}%</small></td>`; }).join('')}</tr>` + (xo ? zonePanel(b, p, s, zoneOf(cm[cur]), sorted, ed, ibc, cm, 2 + its.length) : '');

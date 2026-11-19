@@ -78,7 +78,7 @@ function render() {
   $('#sidefoot').innerHTML = s ? `${esc(s.user.email)}<br><span style="opacity:.7">${esc(Store.getMeta('wsName') || '')}</span>` : 'Saved on this device';
   const views = { home: vHome, bills: vBills, contractors: vContractors, contractor: vContractor, project: vProject, section: vSection, bill: vBill, settings: vSettings };
   const fn = views[r.name] || vHome;
-  const focusKey = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.k : null;
+  const focusKey = window.__nextFocusK || (document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.k : null); window.__nextFocusK = null;
   const scroll = window.scrollY; const tw = $$('.tw').map((e) => [e.scrollLeft, e.scrollTop]);
   let out;
   try { out = fn(r); } catch (e) { console.error(e); out = { title: 'Error', html: `<div class="warnbox">Something went wrong: ${esc(e.message)}</div>` }; }

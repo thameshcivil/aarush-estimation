@@ -39,7 +39,8 @@ function bThisBill(b, p, c, res) {
   let lastF = null;
   const body = rows.slice(0, LIMIT).map((s2) => {
     const L = byS[s2.id]; const t = Object.values(L)[0];
-    const fh = s2.floor !== lastF ? floorHead(3 + its.length, s2.floor) : ''; lastF = s2.floor;
+    const fk = bc.cur + '|' + (s2.floor || ''); const fh = s2.floor !== lastF ? floorHead(3 + its.length, s2.floor, fk, rows.filter((x) => x.floor === s2.floor).length) : ''; lastF = s2.floor;
+    if (UI.fc[fk]) return fh;
     const amt = Object.values(L).reduce((q, x) => q + x.amt, 0);
     return fh + `<tr><td class="stick"><a href="#/section/${s2.id}">${esc(s2.name)}</a><div class="small muted">${esc(locSub(s2, blk))}${s2.series ? ' · S' + esc(p2(s2.series)) : ''}</div>${notesHtml(s2, cur)}</td><td class="n">${qf(t ? t.total : 0)}</td>
       ${its.map((it) => { const x = L[it.id]; const nt = coatNotes(p, s2, it.id).map((n) => n.text).join(' · ');
@@ -104,3 +105,11 @@ function pNotes(p) {
     </tbody></table></div>` : '<div class="empty">No notes yet.</div>'}</div>`;
 }
 CH.notesQ = (el) => { UI.notesQ = el.value; render(); };
+
+/* Tab / Shift+Tab in a table: the next (previous) cell keeps the cursor after the table redraws */
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Tab') return; const el = e.target; if (!el || !el.dataset || !el.dataset.k || !/INPUT|SELECT/.test(el.tagName)) return;
+  const list = $$('#main input[data-k]:not([disabled]):not([type=hidden]), #main select[data-k]:not([disabled])').filter((x) => x.offsetParent !== null);
+  const i = list.indexOf(el); const nx = list[i + (e.shiftKey ? -1 : 1)]; if (!nx) return;
+  window.__nextFocusK = nx.dataset.k; setTimeout(() => { window.__nextFocusK = null; }, 400);
+});
