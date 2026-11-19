@@ -7,7 +7,7 @@
   /* ---------- cell helpers ---------- */
   const XV = (c) => { const v = c && c.value; if (v && typeof v === 'object') { if (v instanceof Date) return v; if ('result' in v) return v.result; if (v.richText) return v.richText.map((t) => t.text).join(''); if ('text' in v) return v.text; if ('error' in v) return null; } return v; };
   const num = (c) => { const v = XV(c); return typeof v === 'number' && isFinite(v) ? v : null; };
-  const noteText = (n) => { if (!n) return ''; let t = typeof n === 'string' ? n : (n.texts || []).map((x) => x.text || '').join(''); t = String(t).replace(/^[^\n:]{1,60}:\s*\n/, '').replace(/\s+/g, ' ').trim(); return t; };
+  const noteText = (n) => { if (!n) return ''; let t = typeof n === 'string' ? n : (n.texts || []).map((x) => x.text || '').join(''); if (/\[threaded comment\]/i.test(t)) { const m = t.split(/\n\s*(?:comment|reply)\s*:\s*\n/i).slice(1).map((x) => x.trim()).filter(Boolean); t = m.length ? m.join(' · ') : ''; } // Excel 365 "comments" (threaded): keep the comment and replies, not the notice t = String(t).replace(/^[^\n:]{1,60}:\s*\n/, '').replace(/\s+/g, ' ').trim(); return t; };
   const str = (c) => { const v = XV(c); return v === null || v === undefined ? '' : (v instanceof Date ? v.toISOString().slice(0, 10) : String(v)).replace(/\s+/g, ' ').trim(); };
   const nrm = (s) => String(s || '').replace(/\s+/g, ' ').trim();
   const SUFX = /\s*as\s+per\s+(old|new|wo)\s+rate\s*$/i;
