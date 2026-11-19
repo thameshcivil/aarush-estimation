@@ -162,7 +162,7 @@ function rLinks(p) {
     <p class="small muted" style="margin-top:-6px">When you enter a % for the master coat of a location in a bill, the linked coats of that same location fill in automatically – like the formulas in your RAB workbook (Internal Ceiling → Wall, Door, Grill…). A linked value never goes below the previous bill, and any cell you type yourself is kept.</p>
     ${rules.length ? `<div class="tw"><table class="t"><thead><tr><th>This coat (filled automatically)</th><th>follows</th><th>Master coat</th><th>Rule</th><th></th></tr></thead><tbody>
     ${rules.map((l, i) => `<tr>
-      <td><select style="min-width:240px" data-ch="link" data-p="${p.id}" data-i="${i}" data-f="target">${opts(l.target)}</select></td>
+      <td><select style="min-width:240px" data-ch="link" data-p="${p.id}" data-i="${i}" data-f="target">${opts(l.target)}</select>${l.from === 'workbook' ? `<div class="small muted">from the workbook formula${l.sheet ? ' – ' + esc(l.sheet) : ''}</div>` : ''}</td>
       <td class="muted">←</td>
       <td><select style="min-width:240px" data-ch="link" data-p="${p.id}" data-i="${i}" data-f="source">${opts(l.source)}</select></td>
       <td style="white-space:nowrap"><select data-ch="link" data-p="${p.id}" data-i="${i}" data-f="mode"><option value="same" ${l.mode !== 'when' ? 'selected' : ''}>same %</option><option value="when" ${l.mode === 'when' ? 'selected' : ''}>set to…</option></select>
@@ -172,7 +172,7 @@ function rLinks(p) {
     <p class="small muted">${rules.length} links. Example: “${esc(label(rules[0].target))}” follows “${esc(label(rules[0].source))}”.</p>` : '<div class="empty">No links yet. “Add standard painting links” sets up the same links as your CG Aria workbook (Internal Ceiling → Wall, Door enamel, MS Grill, Hand Rail, Kitchen; Balcony Ceiling → Balcony Wall; External Texture → Non-Texture).</div>'}
   </div>`;
 }
-CH.link = (el) => { const p = proj(el.dataset.p); const l = p.links[+el.dataset.i]; const f = el.dataset.f; l[f] = ['gt', 'set'].includes(f) ? N(el.value) : el.value; if (f === 'mode' && el.value === 'when') { l.gt = l.gt ?? 0; l.set = l.set ?? 100; } Store.put('project', p); render(); };
+CH.link = (el) => { const p = proj(el.dataset.p); const l = p.links[+el.dataset.i]; const f = el.dataset.f; delete l.from; /* changed by hand: kept when the next workbook is uploaded */ l[f] = ['gt', 'set'].includes(f) ? N(el.value) : el.value; if (f === 'mode' && el.value === 'when') { l.gt = l.gt ?? 0; l.set = l.set ?? 100; } Store.put('project', p); render(); };
 ACT.linkDel = (el) => { const p = proj(el.dataset.p); p.links.splice(+el.dataset.i, 1); Store.put('project', p); render(); };
 ACT.linkAdd = (el) => { const p = proj(el.dataset.p); (p.links = p.links || []).push({ id: uid('l'), target: '', source: '', mode: 'same' }); Store.put('project', p); render(); };
 ACT.linkTemplate = async (el) => {

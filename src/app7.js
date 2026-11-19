@@ -75,6 +75,7 @@ ACT.uploadRab = async (el) => {
   if (report.newItems) notes.push(`${report.newItems} new item(s) / rate(s) added`);
   if (report.renamed) notes.push(`${report.renamed} location(s) renamed`);
   if (report.newSections) notes.push(`${report.newSections} new location(s) added`);
+  if (report.links) notes.push(`${report.links} linked-progress rule(s) read from the workbook’s formulas (Items & Rates → Linked progress)`);
   const body = `${errors.length ? `<div class="warnbox">${errors.map(esc).join('<br>')}</div>` : ''}
     ${report.skipped.length ? `<div class="warnbox">${report.skipped.map(esc).join('<br>')}</div>` : ''}
     ${rows ? `<div class="tw" style="max-height:40vh"><table class="t"><thead><tr><th>RAB</th><th class="n">This bill (gross)</th><th></th><th class="n">Up to date (gross)</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : ''}
@@ -103,7 +104,7 @@ ACT.uploadRab = async (el) => {
   } catch (e) { console.error(e); }
   resetCalc();
   Sync.schedule(300); render();
-  if (formatOnly) { toast(`Format updated${report.renamed ? ' · ' + report.renamed + ' locations renamed' : ''}${report.newSections ? ' · ' + report.newSections + ' new locations' : ''} – bills unchanged`, 5000); return; }
+  if (formatOnly) { toast(`Format updated${report.renamed ? ' · ' + report.renamed + ' locations renamed' : ''}${report.newSections ? ' · ' + report.newSections + ' new locations' : ''}${report.links ? ' · ' + report.links + ' links from formulas' : ''} – bills unchanged`, 5000); return; }
   toast([report.added.length ? 'Added ' + report.added.join(', ') : '', report.replaced.length ? 'Replaced ' + report.replaced.join(', ') : ''].filter(Boolean).join(' · ') || 'Saved');
 };
 

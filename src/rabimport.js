@@ -556,7 +556,7 @@
     recon.forEach((x) => { x.ok = Math.abs(x.abs - x.loc) <= Math.max(1, 0.01 * x.abs); });
     report.recon = recon; report.qtySheets = locLatest.rep;
     project.tplMap = {}; const layouts = locLatest.rep.layout || []; (locLatest.rep.layout || []).forEach((l) => { project.tplMap[l.ws.name] = l.assign.map((g) => ({ cat: g.cat, tc: g.tc, cumC: g.cumC, prevC: g.prevC || null, wi: g.wi, c0: g.c0, c1: g.c1, single: !!g.single })); });
-    if (!(base.links || []).length) { const lk = detectLinks(layouts); if (lk.length) { project.links = lk; report.links = lk.length; } }
+    { const lk = detectLinks(layouts); report.wbLinks = lk; if (!(base.links || []).length && lk.length) { project.links = lk; report.links = lk.length; } }
     report.warnings = []; perFile.forEach(({ w }) => (w.rebal || []).forEach((n) => { const it = project.items.find((i) => i.id === n.wi); report.warnings.push(`${w.inv.rabNo}: block sheets show ${n.blocks.toFixed(2)} for “${it ? it.group + ' – ' + it.desc : n.wi}” but the combined abstract shows ${n.combined.toFixed(2)} – followed the combined abstract (the invoice).`); }));
     return { project, bills, sections, report };
   }
@@ -567,23 +567,41 @@
    * (='Qty Abst (Int Ceiling)'!F12 or INDEX('Qty Abst (Int Ceiling)'!F$10:F$113, MATCH(...))) becomes a "same as" link.
    */
   function detectLinks(layouts) {
-    const pctColOf = (L, g) => { for (let c = g.c0; c <= g.c1; c++) { const h = g.single ? str(L.ws.getCell(L.tr, c)) : str(L.ws.getCell(L.tr + 1, c)); if (/%|percent/i.test(h)) return c; } return null; };
     const colNum = (t) => { let n = 0; for (const ch of t.toUpperCase()) n = n * 26 + ch.charCodeAt(0) - 64; return n; };
-    const byName = {}; layouts.forEach((L) => { byName[L.ws.name.toLowerCase()] = L; });
+    const nk = (n) => String(n).toLowerCase().replace(/\s+/g, ''); const byName = {}; layouts.forEach((L) => { byName[nk(L.ws.name)] = L; });
+    const coatAt = (S, c) => S.assign.find((x) => x.c0 <= c && c <= x.c1);
+    const fOf = (cell) => { const v = cell.value; if (!v || typeof v !== 'object' || !(v.formula || v.sharedFormula)) return null; try { return cell.formula || null; } catch (e) { return null; } };
+    const REF = /(?:'((?:[^']|'')+)'!|([A-Za-z0-9_.]+)!)?\$?([A-Z]{1,3})\$?(\d+)(?::\$?([A-Z]{1,3})\$?(\d+))?/g;
+    // a formula → token string: SRCn = a % of another coat (INDEX…MATCH or a direct reference), OTHn = another coat of this row, SELF = this coat
+    const tokens = (L, g, f) => {
+      const src = []; let t = String(f).replace(/\s+/g, '').toUpperCase(); if (t[0] !== '=') t = '=' + t;
+      t = t.replace(/INDEX\(((?:'(?:[^']|'')*'!)?[^,()']+),MATCH\((?:[^()']|'(?:[^']|'')*')*\)\)/g, (m, rng) => { REF.lastIndex = 0; const r = REF.exec(rng); if (!r) return 'X'; const sh = r[1] ? r[1].replace(/''/g, "'") : r[2]; const S = sh ? byName[nk(sh)] : L; const c = S && coatAt(S, colNum(r[3])); if (!c) return 'X'; src.push(c); return 'SRC' + (src.length - 1); });
+      t = t.replace(REF, (m, q, sh0, col) => { if (/^(SRC|OTH)/.test(m)) return m; const sh = q ? q.replace(/''/g, "'") : sh0; const S = sh ? byName[nk(sh)] : L; if (!S) return 'X'; const c = coatAt(S, colNum(col)); if (!c) return 'X';
+        if (S === L && c.wi === g.wi) return 'SELF'; if (S !== L) { src.push(c); return 'SRC' + (src.length - 1); } src.push(c); return 'OTH' + (src.length - 1); });
+      return { t: t.replace(/100%/g, '1').replace(/(\d+(?:\.\d+)?)%/g, (m, n) => String(+n / 100)), src };
+    };
+    const rulesOf = (g, tk) => {
+      const { t, src } = tk; const R = []; const same = (i) => R.push({ source: src[i].wi, mode: 'same' }); const when = (i, gt, set) => R.push({ source: src[i].wi, mode: 'when', gt: Math.round(gt * 10000) / 100, set: Math.round(set * 10000) / 100 });
+      let m;
+      if ((m = t.match(/^=(?:IF\(X="",?"",)?(SRC|OTH)(\d+)\)?$/))) same(+m[2]); // a copy of another coat's %
+      else if ((m = t.match(/^=IF\((SRC|OTH)(\d+)(>=|=|>)([\d.]+),([\d.]+),(?:SELF|0|"")\)$/))) when(+m[2], m[3] === '>' ? +m[4] : +m[4] - 0.0001, +m[5]); // IF(master = 100%, 100%, own)
+      else if ((m = t.match(/^=IF\(AND\((SRC|OTH)(\d+)=([\d.]+),(OTH)(\d+)=0\),([\d.]+),OTH(\d+)\)$/))) { when(+m[2], +m[3] - 0.0001, +m[6]); same(+m[7]); } // IF(AND(master = 90%, other = 0), 90%, other)
+      else if ((m = t.match(/^=IF\((OTH|SRC)(\d+)>0,(?:OTH|SRC)\d+,(SRC|OTH)(\d+)\)$/))) { same(+m[2]); same(+m[4]); } // IF(other > 0, other, master)
+      else if ((m = t.match(/^=MAX\(((?:(?:SRC|OTH)\d+,?)+)\)$/))) m[1].split(',').filter(Boolean).forEach((x) => same(+x.replace(/\D/g, '')));
+      return R.filter((r) => r.source && r.source !== g.wi);
+    };
     const out = []; const seen = new Set();
     layouts.forEach((L) => L.assign.forEach((g) => {
-      const pc = pctColOf(L, g); if (!pc) return;
-      let f = null;
-      for (const row of L.rows) { const cell = L.ws.getCell(row.r, pc); const v = cell.value; if (v && typeof v === 'object' && (v.formula || v.sharedFormula)) { try { f = cell.formula; } catch (e) { f = null; } if (f) break; } }
-      if (!f) return;
-      if (/[*\/]/.test(f.replace(/MATCH\([^)]*\)/ig, ''))) return; // a computed %, not a copy
-      // every reference to a % column of another coat (this sheet or another one)
-      const hits = []; const re = /(?:'((?:[^']|'')+)'!|([A-Za-z0-9_.]+)!)?\$?([A-Z]{1,3})\$?(\d+)/g; let m;
-      while ((m = re.exec(f))) { const sheet = m[1] ? m[1].replace(/''/g, "'") : m[2]; const S = sheet ? byName[sheet.toLowerCase()] : L; if (!S) continue; const sc = colNum(m[3]); const src = S.assign.find((x) => x.c0 <= sc && sc <= x.c1); if (!src || src.wi === g.wi) continue; if (pctColOf(S, src) !== sc) continue; hits.push(src); }
-      const uniq = [...new Set(hits.map((h) => h.wi))]; if (uniq.length !== 1) return;
-      const src = hits[0];
-      const k = g.wi + '<' + src.wi; if (seen.has(k)) return; seen.add(k);
-      out.push({ id: 'l' + out.length + '_' + g.wi, target: g.wi, source: src.wi, mode: 'same', gt: null, set: null, from: 'workbook' });
+      if (!g.c0 || !g.c1) return;
+      for (let c = g.c0; c <= g.c1; c++) {
+        // the most common formula of this column (rows written the same way), if it reads another coat
+        const pats = {}; L.rows.forEach((row) => { const f = fOf(L.ws.getCell(row.r, c)); if (!f || !/!|INDEX/i.test(f)) return; const k = f.replace(/(\$?[A-Z]{1,3})\$?\d+/g, '$1#'); (pats[k] = pats[k] || { n: 0, f }).n++; });
+        const best = Object.values(pats).sort((a, b) => b.n - a.n)[0]; if (!best || best.n < 2) continue;
+        const rules = rulesOf(g, tokens(L, g, best.f)); if (!rules.length) continue;
+        rules.forEach((r) => { const k = g.wi + '<' + r.source + '|' + r.mode + '|' + (r.gt ?? '') + '|' + (r.set ?? ''); if (seen.has(k)) return; seen.add(k);
+          out.push({ id: 'l' + out.length + '_' + g.wi, target: g.wi, source: r.source, mode: r.mode, gt: r.mode === 'when' ? r.gt : null, set: r.mode === 'when' ? r.set : null, from: 'workbook', sheet: L.ws.name }); });
+        break; // one % column per coat
+      }
     }));
     return out;
   }
@@ -666,7 +684,12 @@
       if (isLatest) {
         const g = {}; Object.keys(O.gfc || {}).forEach((bl) => Object.keys(O.gfc[bl]).forEach((wi) => { const pb = B(bl); g[pb] = g[pb] || {}; g[pb][imap[wi] || wi] = O.gfc[bl][wi]; })); if (Object.keys(g).length) P.gfc = g;
         if (O.tplMap) { P.tplMap = {}; Object.keys(O.tplMap).forEach((sn) => { P.tplMap[sn] = O.tplMap[sn].map((g) => Object.assign({}, g, { wi: imap[g.wi] || g.wi })); }); }
-        if (O.links && O.links.length && !(P.links || []).length) P.links = O.links.map((l) => Object.assign({}, l, { target: imap[l.target] || l.target, source: imap[l.source] || l.source }));
+        if (isLatest && (one.report.wbLinks || []).length) { // links read from the workbook's formulas replace the earlier ones read from a workbook; links made in the app stay
+          const mine = (P.links || []).filter((l) => l.from !== 'workbook'); const key = (l) => l.target + '<' + l.source + '|' + l.mode;
+          const have = new Set(mine.map(key)); const wl = one.report.wbLinks.map((l) => Object.assign({}, l, { target: imap[l.target] || l.target, source: imap[l.source] || l.source })).filter((l) => !have.has(key(l)));
+          const before = JSON.stringify((P.links || []).filter((l) => l.from === 'workbook').map(key).sort());
+          P.links = mine.concat(wl); report.links = wl.length; if (before !== JSON.stringify(wl.map(key).sort())) report.linksChanged = true;
+        } else if (O.links && O.links.length && !(P.links || []).length) P.links = O.links.map((l) => Object.assign({}, l, { target: imap[l.target] || l.target, source: imap[l.source] || l.source }));
         ['employer', 'description', 'soNo', 'woDate', 'sac', 'invoiceRows'].forEach((k) => { if (O[k] && (typeof O[k] !== 'object' || (O[k].name))) P[k] = O[k]; });
         // the newest bill sets the layout: its category names and order, its item headings and order first; items it
         // dropped stay (old bills use them) after the current ones – the app hides them on the working screens
