@@ -113,3 +113,31 @@ document.addEventListener('keydown', (e) => {
   const i = list.indexOf(el); const nx = list[i + (e.shiftKey ? -1 : 1)]; if (!nx) return;
   window.__nextFocusK = nx.dataset.k; setTimeout(() => { window.__nextFocusK = null; }, 400);
 });
+
+/* % cells: ↑ / ↓ (keys or the little arrows) step through 0, 50, 70, 85, 90, 100; any other number can still be typed */
+(function () {
+  const STEPS = [0, 50, 70, 85, 90, 100];
+  const isPct = (el) => el && el.tagName === 'INPUT' && el.type === 'number' && el.max === '100' && el.closest('#main');
+  const curOf = (el) => { const v = el.value === '' ? parseFloat(el.placeholder) : parseFloat(el.value); return isNaN(v) ? 0 : v; };
+  const stepTo = (el, up, from) => {
+    const v = from === undefined ? curOf(el) : from;
+    const nx = up ? STEPS.find((s) => s > v + 1e-9) : STEPS.slice().reverse().find((s) => s < v - 1e-9);
+    if (nx === undefined) return false;
+    el.value = String(nx); el.dataset.lastv = el.value;
+    if (el.dataset.k) window.__nextFocusK = el.dataset.k; // keep the cursor here after the table redraws
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  };
+  document.addEventListener('keydown', (e) => {
+    if ((e.key !== 'ArrowUp' && e.key !== 'ArrowDown') || e.altKey || e.ctrlKey || e.metaKey || !isPct(e.target)) return;
+    e.preventDefault(); stepTo(e.target, e.key === 'ArrowUp');
+  }, true);
+  // the spinner arrows change the value by 1 without typing: turn that into the next step
+  document.addEventListener('focusin', (e) => { if (isPct(e.target)) e.target.dataset.lastv = e.target.value; });
+  document.addEventListener('input', (e) => {
+    const el = e.target; if (!isPct(el) || (e.inputType !== undefined && e.inputType !== '')) return;
+    const before = el.dataset.lastv === undefined || el.dataset.lastv === '' ? curOf(Object.assign(document.createElement('input'), { placeholder: el.placeholder })) : parseFloat(el.dataset.lastv);
+    const now = parseFloat(el.value); if (isNaN(now) || isNaN(before) || now === before) return;
+    e.stopImmediatePropagation(); stepTo(el, now > before, before);
+  }, true);
+})();
