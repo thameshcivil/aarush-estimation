@@ -7,6 +7,7 @@
   /* ---------- cell helpers ---------- */
   const XV = (c) => { const v = c && c.value; if (v && typeof v === 'object') { if (v instanceof Date) return v; if ('result' in v) return v.result; if (v.richText) return v.richText.map((t) => t.text).join(''); if ('text' in v) return v.text; if ('error' in v) return null; } return v; };
   const num = (c) => { const v = XV(c); return typeof v === 'number' && isFinite(v) ? v : null; };
+  const noteText = (n) => { if (!n) return ''; let t = typeof n === 'string' ? n : (n.texts || []).map((x) => x.text || '').join(''); t = String(t).replace(/^[^\n:]{1,60}:\s*\n/, '').replace(/\s+/g, ' ').trim(); return t; };
   const str = (c) => { const v = XV(c); return v === null || v === undefined ? '' : (v instanceof Date ? v.toISOString().slice(0, 10) : String(v)).replace(/\s+/g, ' ').trim(); };
   const nrm = (s) => String(s || '').replace(/\s+/g, ' ').trim();
   const SUFX = /\s*as\s+per\s+(old|new|wo)\s+rate\s*$/i;
@@ -287,6 +288,7 @@
       const secs = []; grp.forEach((g) => { const last = secs[secs.length - 1]; if (last && last.title === g.title && !last.cs.some((x) => g.cs.some((y) => y.role === x.role))) last.g.push(g); else secs.push({ title: g.title, g: [g], get cs() { return this.g.flatMap((q) => q.cs); } }); });
       // ---- pass 1: rows → locations with raw column values
       const sheetBlock = blockFromText(ws.name, blocks) || (blocks.length === 1 ? blocks[0].id : null);
+      const remC = (() => { for (let c = 3; c <= maxC; c++) { if (/remark/i.test(str(ws.getCell(tr, c))) || /remark/i.test(str(ws.getCell(tr + 1, c)))) return c; } return 0; })();
       let curBlock = sheetBlock, floor = null, pore = '', lastHead = '', elev = ''; let sawTotal = false; const seenHere = new Set(); const rows = [];
       const cols = [...new Set(grp.flatMap((g) => [g.tc, ...g.cs.map((x) => x.cumC), ...g.cs.map((x) => x.prevC).filter(Boolean)]))];
       if (forced && !forced[ws.name]) { rep.skipped.push(ws.name + ' (not used in the bill)'); return; }
@@ -330,7 +332,10 @@
         }
         else seenHere.add(key);
         const v = {}; cols.forEach((c) => { v[c] = num(row.getCell(c)) || 0; });
-        rows.push({ r, key, meta, elev, block: curBlock, pore: (name.match(/\b(pore|core)\s*-?\s*[a-z0-9]+(\s*&\s*\d+)?/i) || [])[0] || pore, v });
+        const notes = []; // Excel comments on the row's cells, and text in a "Remarks" column
+        for (let c = 1; c <= maxC; c++) { const cell = row.getCell(c); const t = noteText(cell.note); if (t) notes.push({ c, text: t, cell: cell.address });
+          else if (c === remC) { const rv = str(cell); if (rv && !/^-+$/.test(rv)) notes.push({ c, text: rv, cell: cell.address, remark: true }); } }
+        rows.push({ r, key, meta, elev, notes, block: curBlock, pore: (name.match(/\b(pore|core)\s*-?\s*[a-z0-9]+(\s*&\s*\d+)?/i) || [])[0] || pore, v });
       }
       // ---- pass 2: pick a category for every section
       const sn = kwOf(ws.name); const used = new Set(); const sheetItems = new Set(); const assign = forced ? forced[ws.name].map((g) => Object.assign({}, g)) : [];
@@ -379,7 +384,12 @@
       // ---- pass 3: aggregate
       rows.forEach((r) => {
         const L = out[r.key] = out[r.key] || Object.assign({ blockId: r.block, pore: r.pore, cats: {}, ord: (wb.worksheets.indexOf(ws) + 1) * 100000 + r.r }, r.meta);
-        if (r.elev && !L.elev) L.elev = r.elev; // ord: where it first appears in the workbook
+        if (r.elev && !L.elev) L.elev = r.elev;
+        (r.notes || []).forEach((n) => { // the coat whose columns hold the comment, else the sheet's first category
+          let best = null, bd = 1e9; assign.forEach((g) => { [g.cumC, g.prevC, g.cumC - 1, g.cumC - 2].filter(Boolean).forEach((c) => { const d = Math.abs(c - n.c) + (c > n.c ? 0.5 : 0); if (d < bd) { bd = d; best = g; } }); });
+          if (n.remark || n.c <= 2 || bd > 6) best = assign[0] && { cat: assign[0].cat };
+          L.notes = L.notes || []; if (!L.notes.some((x) => x.text === n.text && x.cat === (best && best.cat))) L.notes.push({ text: n.text, cat: best ? best.cat : '', wi: best && best.wi ? best.wi : '', sheet: ws.name, cell: n.cell });
+        }); // ord: where it first appears in the workbook
         const seenTc = new Set(); const here = (wb.worksheets.indexOf(ws) + 1) * 100000 + r.r;
         assign.forEach((g) => {
           // the row's place in the sheet that holds this category, so each category lists its rows as its own sheet does
@@ -503,7 +513,7 @@
       const L = locLatest.locs[key]; const rows = [];
       Object.keys(L.cats).forEach((cat) => { if (L.cats[cat].total) rows.push({ id: 'm' + rows.length, desc: 'Quantity abstract ' + latest.inv.rabNo, cat, direct: Math.round(L.cats[cat].total * 1e6) / 1e6, coef: 1 }); });
       if (!rows.length) return;
-      const s = { id: `s_${base.id}_${++order}`, projectId: base.id, blockId: L.blockId, name: L.name, kind: L.kind, flatNo: L.flatNo, series: L.series, floor: L.floor, floorNo: L.floorNo, pore: L.pore || '', elev: L.elev || '', mult: 1, ref: '', order, ord: L.ord, ordc: L.ordc || {}, rows, openingPct: {} };
+      const s = { id: `s_${base.id}_${++order}`, projectId: base.id, blockId: L.blockId, name: L.name, kind: L.kind, flatNo: L.flatNo, series: L.series, floor: L.floor, floorNo: L.floorNo, pore: L.pore || '', elev: L.elev || '', notes: L.notes || [], mult: 1, ref: '', order, ord: L.ord, ordc: L.ordc || {}, rows, openingPct: {} };
       sections.push(s); secByKey[key] = s;
     });
     // floors per block
@@ -674,6 +684,7 @@
           else { const add = rows1.filter((r) => !have.has(r.cat)); if (add.length) { s.rows = (s.rows || []).concat(add.map((r, i) => Object.assign(r, { id: 'm' + i + stamp }))); chS.add(s.id); } }
         }
         if (isLatest && s1.ord !== undefined && s.ord !== s1.ord) { s.ord = s1.ord; chS.add(s.id); } // workbook order
+        if (isLatest && JSON.stringify(s.notes || []) !== JSON.stringify(s1.notes || [])) { s.notes = s1.notes || []; chS.add(s.id); } // notes / comments from the workbook
         if ((isLatest || !s.elev) && s1.elev && s.elev !== s1.elev) { s.elev = s1.elev; chS.add(s.id); } // elevation heading in the sheet
         if (isLatest && s1.ordc && JSON.stringify(s.ordc || {}) !== JSON.stringify(s1.ordc)) { s.ordc = s1.ordc; chS.add(s.id); }
         smap[s1.id] = s.id;

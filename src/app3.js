@@ -15,6 +15,11 @@ function elevOf(s) {
   const m = String(s.name || '').match(/(?:^|[^a-z])(north|south|east|west)\s*[-_ ]?\s*(side|facing|faceing)(?![a-z])/i);
   return m ? m[1][0].toUpperCase() + m[1].slice(1).toLowerCase() + ' Side' : '';
 }
+/* notes on a location (Excel comments / Remarks from the workbook, or added here); cat = only that category's and general ones */
+function notesHtml(s, cat) {
+  const ns = (s.notes || []).filter((n) => !cat || !n.cat || n.cat === cat); if (!ns.length) return '';
+  return ns.map((n) => `<div class="lnote" title="${esc((n.sheet ? n.sheet + (n.cell ? ' ' + n.cell : '') : 'Added in the app'))}">📝 ${esc(n.text)}</div>`).join('');
+}
 /* label under a location: its pore/core, or for common areas its elevation */
 function locSub(s, blk) { const p = Calc.sectionPore(s, blk); return p === 'Common' && s.kind !== 'flat' ? (elevOf(s) || p) : p; }
 
@@ -187,6 +192,9 @@ function vSection(r) {
       <label class="f">Block<select data-ch="f" data-id="${raw.id}" data-path="blockId" data-rr>${(p.blocks || []).map((b) => `<option value="${b.id}" ${b.id === raw.blockId ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select></label>
       ${kind !== 'template' ? `<label class="f">Measurements from typical template<select data-ch="f" data-id="${raw.id}" data-path="templateId" data-rr><option value="">– own measurements –</option>${temps.map((t) => `<option value="${t.id}" ${t.id === raw.templateId ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select></label>` : ''}
     </div></div>
+    <div class="card"><h2>Notes<span class="sp"></span><button class="btn sm" data-act="noteAdd" data-s="${raw.id}">+ Note</button></h2>
+      ${(raw.notes || []).length ? `<div class="tw"><table class="t"><tbody>${raw.notes.map((n, i) => `<tr><td>📝 ${esc(n.text)}</td><td class="small muted">${esc(n.cat ? (cm[n.cat] || {}).name || n.cat : 'All work')}${n.wi ? ' · ' + esc((p.items.find((x) => x.id === n.wi) || {}).desc || '') : ''}</td><td class="small muted">${esc(n.sheet ? n.sheet + ' ' + (n.cell || '') : 'added here')}</td><td style="white-space:nowrap"><button class="btn sm ghost" data-act="noteEdit" data-s="${raw.id}" data-i="${i}">Edit</button><button class="btn sm ghost d" data-act="noteDel" data-s="${raw.id}" data-i="${i}">✕</button></td></tr>`).join('')}</tbody></table></div>` : '<p class="small muted" style="margin:0">No notes. Comments you write on this location’s cells in the workbook (e.g. “Done by another contractor”) come in here when you upload it.</p>'}
+    </div>
     ${raw.isTemplate ? `<div class="okbox">Typical template – used by <b>${users}</b> location${users === 1 ? '' : 's'}. Changing these measurements updates all of them (bills already submitted keep their frozen figures). A template is never billed itself.</div>` : ''}
     ${linked ? `<div class="okbox">Measurements come from typical template <a href="#/section/${tpl.id}"><b>${esc(tpl.name)}</b></a>. <a href="#" data-act="unlinkTpl" data-s="${raw.id}">Copy the rows here to edit this flat separately</a></div>` : (raw.templateId ? `<div class="warnbox">This location has its own rows, so the template is ignored. Delete all rows to use the template again.</div>` : '')}
     <div class="card"><h2>Measurements <span class="small muted">(metres; converts to the billing unit)</span><span class="sp"></span>
@@ -273,8 +281,8 @@ function bProgress(b, p, c, res, ed) {
   const body = rows.slice(0, LIMIT).map(([s, t]) => {
     const head = s.floor !== lastF ? floorHead(2 + its.length, s.floor) : ''; lastF = s.floor;
     const xo = !!UI.xp[s.id];
-    return head + `<tr${xo ? ' class="xon"' : ''}><td class="stick"><button class="xbtn" data-act="xpand" data-s="${s.id}" title="All ${ZONES[zoneOf(cm[cur])]} items of this location">${xo ? '▴' : '▾'}</button><a href="#/section/${s.id}">${esc(s.name)}</a><div class="small muted">${esc(locSub(s, blk))}${s.series ? ' · S' + esc(p2(s.series)) : ''}</div></td><td class="n">${qf(t[cur])}</td>
-    ${its.map((it) => { const pv = Calc.prevPct(s, it.id, b, sorted); const cv = Calc.curPct(s, it.id, b, sorted); const has = b.progress && b.progress[s.id] && b.progress[s.id][it.id] !== undefined; const lnk = has && b.linked && b.linked[s.id] && b.linked[s.id][it.id]; return `<td class="n pct"><input class="num" title="${lnk ? 'Filled from the linked master coat – type to override' : ''}" style="width:62px;${lnk ? 'background:#e8f1fb;color:#1d5f99;font-weight:600' : has && cv !== pv ? 'background:#eaf6ee;font-weight:600' : ''}" type="number" step="any" min="0" max="100" value="${has ? esc(+cv.toFixed(2)) : ''}" placeholder="${+pv.toFixed(1)}" ${ed ? '' : 'disabled'} data-ch="pct" data-b="${b.id}" data-s="${s.id}" data-w="${it.id}" data-k="p${s.id}${it.id}"><small>${lnk ? '🔗 ' : ''}prev ${+pv.toFixed(1)}%</small></td>`; }).join('')}</tr>` + (xo ? zonePanel(b, p, s, zoneOf(cm[cur]), sorted, ed, ibc, cm, 2 + its.length) : '');
+    return head + `<tr${xo ? ' class="xon"' : ''}><td class="stick"><button class="xbtn" data-act="xpand" data-s="${s.id}" title="All ${ZONES[zoneOf(cm[cur])]} items of this location">${xo ? '▴' : '▾'}</button><a href="#/section/${s.id}">${esc(s.name)}</a><div class="small muted">${esc(locSub(s, blk))}${s.series ? ' · S' + esc(p2(s.series)) : ''}</div>${notesHtml(s, cur)}</td><td class="n">${qf(t[cur])}</td>
+    ${its.map((it) => { const pv = Calc.prevPct(s, it.id, b, sorted); const cv = Calc.curPct(s, it.id, b, sorted); const has = b.progress && b.progress[s.id] && b.progress[s.id][it.id] !== undefined; const lnk = has && b.linked && b.linked[s.id] && b.linked[s.id][it.id]; const nt = (s.notes || []).filter((x) => x.wi === it.id && x.cat === cur).map((x) => x.text).join(' · '); return `<td class="n pct${nt ? ' hasnote' : ''}"><input class="num" title="${nt ? '📝 ' + esc(nt) + (lnk ? ' – ' : '') : ''}${lnk ? 'Filled from the linked master coat – type to override' : ''}" style="width:62px;${lnk ? 'background:#e8f1fb;color:#1d5f99;font-weight:600' : has && cv !== pv ? 'background:#eaf6ee;font-weight:600' : ''}" type="number" step="any" min="0" max="100" value="${has ? esc(+cv.toFixed(2)) : ''}" placeholder="${+pv.toFixed(1)}" ${ed ? '' : 'disabled'} data-ch="pct" data-b="${b.id}" data-s="${s.id}" data-w="${it.id}" data-k="p${s.id}${it.id}"><small>${lnk ? '🔗 ' : ''}prev ${+pv.toFixed(1)}%</small></td>`; }).join('')}</tr>` + (xo ? zonePanel(b, p, s, zoneOf(cm[cur]), sorted, ed, ibc, cm, 2 + its.length) : '');
   }).join('');
   const bulk = ed ? `<tr style="background:#fbfcfd"><td class="stick small"><b>Set for all ${rows.length} shown</b><div class="muted">blank = clear</div></td><td></td>${its.map((it) => `<td class="n"><input class="num" style="width:56px" type="number" step="any" min="0" max="100" data-k="bulk${it.id}" placeholder="%"><div><a href="#" class="small" data-act="pctBulk" data-b="${b.id}" data-p="${p.id}" data-bl="${bc.cur}" data-c="${cur}" data-w="${it.id}">apply</a></div></td>`).join('')}</tr>` : '';
   return bc.html + `<div class="zones">${zoneChips(catIds, cm, cur, p)}</div>${oldNote}
@@ -377,3 +385,7 @@ ACT.repExport = async (el) => {
 };
 
 ACT.goLinks = (el) => { UI.rateTab = 'links'; go(el.getAttribute('href').slice(2)); };
+
+ACT.noteAdd = async (el) => { const t = await promptBox('Note on this location', 'Note', ''); if (!t || !t.trim()) return; const s = Store.get(el.dataset.s); s.notes = (s.notes || []).concat([{ text: t.trim(), cat: '', wi: '' }]); Store.put('section', s); render(); };
+ACT.noteEdit = async (el) => { const s = Store.get(el.dataset.s); const n = s.notes[+el.dataset.i]; const t = await promptBox('Edit note', 'Note', n.text); if (t === null || t === undefined) return; if (!t.trim()) s.notes.splice(+el.dataset.i, 1); else n.text = t.trim(); Store.put('section', s); render(); };
+ACT.noteDel = async (el) => { const s = Store.get(el.dataset.s); s.notes.splice(+el.dataset.i, 1); Store.put('section', s); render(); };
