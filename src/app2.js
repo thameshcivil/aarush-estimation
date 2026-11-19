@@ -72,7 +72,7 @@ function render() {
   $('#side').style.display = ''; $('#top').style.display = ''; $('#bnav').style.display = '';
   const r = route();
   const active = { home: 'home', bills: 'bills', bill: 'bills', contractors: 'contractors', contractor: 'contractors', project: 'contractors', section: 'contractors', settings: 'settings' }[r.name] || 'home';
-  const nav = NAV.map(([k, l, ic]) => `<a href="#/${k}" class="${k === active ? 'on' : ''}">${icon(ic)}<span>${l}</span></a>`).join('');
+  const nav = NAV.map(([k, l, ic]) => `<a href="#/${k}" title="${l}" class="${k === active ? 'on' : ''}">${icon(ic)}<span>${l}</span></a>`).join('');
   $('#snav').innerHTML = nav; $('#bnav').innerHTML = nav;
   const s = Sync.session();
   $('#sidefoot').innerHTML = s ? `${esc(s.user.email)}<br><span style="opacity:.7">${esc(Store.getMeta('wsName') || '')}</span>` : 'Saved on this device';

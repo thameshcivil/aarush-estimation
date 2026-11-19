@@ -69,3 +69,14 @@ ACT.tbExport = async (el) => {
   ws.autoFilter = { from: 'A1', to: 'M1' };
   await saveFile(new Blob([await wb.xlsx.writeBuffer()], { type: XLSX_TYPE }), safeName(`${p.name}_${b.rabNo}_billed_list`) + '.xlsx');
 };
+
+/* side bar expand / collapse (remembered on this device) */
+(function () {
+  const KEY = 'aarush.sidec';
+  const set = (c) => { document.body.classList.toggle('sidec', c); const t = document.getElementById('sidetog'); if (t) { t.querySelector('.ar').innerHTML = c ? '&#187;' : '&#171;'; t.querySelector('.tx').textContent = c ? 'Expand' : 'Collapse'; t.title = (c ? 'Expand' : 'Collapse') + ' side bar (Ctrl+B)'; } try { localStorage.setItem(KEY, c ? '1' : '0'); } catch (e) { /* storage unavailable */ } };
+  let c0 = false; try { c0 = localStorage.getItem(KEY) === '1'; } catch (e) { /* storage unavailable */ }
+  set(c0);
+  const tog = () => set(!document.body.classList.contains('sidec'));
+  const t = document.getElementById('sidetog'); if (t) t.addEventListener('click', tog);
+  document.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'b' && !/INPUT|TEXTAREA|SELECT/.test((e.target || {}).tagName || '')) { e.preventDefault(); tog(); } });
+})();
