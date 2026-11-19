@@ -540,6 +540,7 @@ function vBill(r) {
     <span class="sp"></span>
     <div class="amt" style="margin-right:6px"><div class="small muted">This bill (net)</div><div style="font-weight:700;font-size:17px">₹ ${inr(res.invoice.cur.net)}</div></div>
     <button class="btn a" data-act="exportBill" data-id="${b.id}">⬇ Excel</button></div>
+    ${b.backup ? `<div class="warnbox small" style="margin:8px 0 0">This bill was replaced by an upload of <b>${esc(b.backup.file)}</b> on ${fmtD(String(b.backup.at).slice(0, 10))}. <a href="#" data-act="billRestore" data-id="${b.id}">Restore the bill as it was before</a> · <a href="#" data-act="billBackupDrop" data-id="${b.id}">keep this one</a></div>` : ''}
     ${!ed ? `<div class="small muted" style="margin-top:6px">This bill is ${esc(b.status)} – figures are frozen. <a href="#" data-act="unlock" data-id="${b.id}">Unlock to edit</a></div>` : ''}
     ${res.warnings.length ? `<div class="warnbox" style="margin:10px 0 0">${res.warnings.map(esc).join('<br>')}</div>` : ''}</div>`;
   const body = { progress: bProgress, billed: bThisBill, direct: bDirect, abstract: bAbstract, invoice: bInvoice, track: bTrack }[tab](b, p, c, res, ed);
@@ -629,6 +630,13 @@ CH.status = async (el) => {
   if (to === 'Cancelled') delete b.frozen;
   b.status = to; Store.put('bill', b); render();
 };
+ACT.billRestore = async (el) => {
+  const b = Store.get(el.dataset.id); if (!b || !b.backup) return; let net = null; try { const t = Object.assign({}, b.backup.bill); net = Calc.computeBill(proj(b.projectId), sectionsOf(b.projectId), billsOf(b.projectId).map((x) => (x.id === b.id ? t : x)), t).invoice.cur.net; } catch (e) { /* – */ }
+  if (!(await confirmBox(`Put ${b.rabNo} back as it was before the upload of ${b.backup.file}${net !== null ? ' (₹ ' + inr(net) + ' net)' : ''}? The uploaded version is kept, so you can switch back.`, 'Restore'))) return;
+  const now = Object.assign({}, b); delete now.backup; const nb = Object.assign({}, b.backup.bill, { id: b.id, backup: { at: new Date().toISOString(), file: 'the restore (uploaded version)', bill: now } });
+  await Store.put('bill', nb); resetCalc(); render(); toast('Restored ' + b.rabNo);
+};
+ACT.billBackupDrop = async (el) => { const b = Store.get(el.dataset.id); if (!(await confirmBox('Remove the saved copy of the old bill?', 'Remove'))) return; delete b.backup; await Store.put('bill', b); render(); };
 ACT.unlock = async (el) => { const b = Store.get(el.dataset.id); if (!(await confirmBox('Unlock this bill for editing? It will go back to Draft and figures will be recalculated.', 'Unlock'))) return; delete b.frozen; b.status = 'Draft'; Store.put('bill', b); render(); };
 CH.pay = (el) => { const b = Store.get(el.dataset.b); b.payments[+el.dataset.i][el.dataset.f] = el.dataset.f === 'amount' ? N(el.value) : el.value; Store.put('bill', b); render(); };
 ACT.payAdd = (el) => { const b = Store.get(el.dataset.b); (b.payments = b.payments || []).push({ date: today(), amount: null, ref: '' }); Store.put('bill', b); render(); };

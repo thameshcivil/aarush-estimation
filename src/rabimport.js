@@ -753,6 +753,8 @@
         imported: { file: w.name, at: new Date().toISOString(), invoice: w.inv.totals }, frozen: { qty: mapQty(one.bills[0].frozen.qty), at: new Date().toISOString(), net: (w.inv.totals.net || {}).cur },
         notes: (old ? 'Replaced from ' : 'Uploaded from ') + w.name
       });
+      if (old) { const keep = clone(old); delete keep.backup; nb.backup = { at: new Date().toISOString(), file: w.name, bill: keep }; } // the bill as it was, to restore
+      else delete nb.backup;
       if (old) { const i = bills.findIndex((b) => b.id === old.id); bills[i] = nb; report.replaced.push(nb.rabNo); } else { bills.push(nb); report.added.push(nb.rabNo); }
       chB.add(nb.id);
       if (old && nextB) {

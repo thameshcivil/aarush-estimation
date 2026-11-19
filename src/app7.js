@@ -71,12 +71,19 @@ ACT.uploadRab = async (el) => {
       <td class="n">${ag !== null ? inr(ag) : '–'}<div class="small muted">invoice ${ig.cur != null ? inr(ig.cur) : '–'}</div></td><td>${okMark(ag, ig.cur)}</td>
       <td class="n">${ac !== null ? inr(ac) : '–'}<div class="small muted">invoice ${ig.cum != null ? inr(ig.cum) : '–'}</div></td><td>${okMark(ac, ig.cum)}</td></tr>`;
   }).join('');
+  // dangers: a bill in the app that would be overwritten, and a file whose name and invoice disagree on the RAB number
+  const danger = [];
+  report.files.forEach((f) => {
+    const m = String(f.name).match(/RAB[\s_-]*0*(\d+)/i); if (m && +m[1] !== f.rab) danger.push(`The file name says RAB ${m[1]} but its Invoice sheet says ${f.rabNo}. As a running bill it would be filed as ${f.rabNo}.`);
+    if (!f.replaced) return; const old = billsOf(p.id).find((b) => b.seq === f.rab && b.status !== 'Cancelled'); if (!old) return;
+    if (!old.frozen || (old.status || 'Draft') === 'Draft') { let net = null; try { net = compute(old).invoice.cur.net; } catch (e) { /* – */ } danger.push(`${f.rabNo} in the app has progress entered in the app${net !== null ? ' (₹ ' + inr(net) + ' net now)' : ''}. As a running bill this file REPLACES it with the file’s figures. Choose “Format only” to keep it.`); }
+  });
   const notes = [];
   if (report.newItems) notes.push(`${report.newItems} new item(s) / rate(s) added`);
   if (report.renamed) notes.push(`${report.renamed} location(s) renamed`);
   if (report.newSections) notes.push(`${report.newSections} new location(s) added`);
   if (report.links) notes.push(`${report.links} linked-progress rule(s) read from the workbook’s formulas (Items & Rates → Linked progress)`);
-  const body = `${errors.length ? `<div class="warnbox">${errors.map(esc).join('<br>')}</div>` : ''}
+  const body = `${danger.length ? `<div class="warnbox" style="border-color:#c62828;color:#8e1b1b"><b>Check before saving:</b><br>${danger.map(esc).join('<br>')}</div>` : ''}${errors.length ? `<div class="warnbox">${errors.map(esc).join('<br>')}</div>` : ''}
     ${report.skipped.length ? `<div class="warnbox">${report.skipped.map(esc).join('<br>')}</div>` : ''}
     ${rows ? `<div class="tw" style="max-height:40vh"><table class="t"><thead><tr><th>RAB</th><th class="n">This bill (gross)</th><th></th><th class="n">Up to date (gross)</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : ''}
     ${notes.length ? `<p class="small">${notes.map(esc).join(' · ')}</p>` : ''}
@@ -89,6 +96,7 @@ ACT.uploadRab = async (el) => {
   const r = await dialog(`Upload running bill – ${p.name}`, body, report.files.length ? [['cancel', 'Cancel'], ['ok', 'Save', 'p']] : [['cancel', 'Close']]);
   if (r.action !== 'ok') return;
   const formatOnly = r.values.mode === 'format';
+  if (!formatOnly && danger.some((d) => /REPLACES/.test(d)) && !(await confirmBox('This will replace a bill that has progress entered in the app with the file’s figures. A copy of the old bill is kept (Restore button on the bill). Replace it?', 'Replace'))) return;
   if (formatOnly) { // a format file must not touch any bill's figures: read it again without the "previous" corrections
     try { out = RabImport.mergeRab(ex, wbs.map((w) => ({ name: w.name, wb: w.wb })), { noPrevFix: true, asLatest: true }); } catch (e) { toast(e.message); return; }
     ({ project, allBills, allSections, report } = out);
@@ -107,7 +115,7 @@ ACT.uploadRab = async (el) => {
   if (report.linksChanged && typeof applyLinks === 'function') { const P2 = proj(p.id); for (const b of billsOf(p.id).filter((x) => (x.status || 'Draft') === 'Draft')) { const n = applyLinks(P2, b, sectionsOf(p.id).map((x) => x.id)); if (n) { await Store.put('bill', b); relinked += n; } } resetCalc(); }
 
   Sync.schedule(300); render();
-  if (formatOnly) { toast(`Format updated${report.renamed ? ' · ' + report.renamed + ' locations renamed' : ''}${report.newSections ? ' · ' + report.newSections + ' new locations' : ''}${report.links ? ' · ' + report.links + ' links from formulas' : ''}${relinked ? ' · ' + relinked + ' linked coats filled in draft bills' : ''} – bill amounts unchanged`, 5000); return; }
+  if (formatOnly) { toast(`Format updated${report.renamed ? ' · ' + report.renamed + ' locations renamed' : ''}${report.newSections ? ' · ' + report.newSections + ' new locations' : ''}${report.links ? ' · ' + report.links + ' links from formulas' : ''}${relinked ? ' · ' + relinked + ' linked coats filled in draft bills' : ' – bills unchanged'}`, 5000); return; }
   toast([report.added.length ? 'Added ' + report.added.join(', ') : '', report.replaced.length ? 'Replaced ' + report.replaced.join(', ') : ''].filter(Boolean).join(' · ') || 'Saved');
 };
 
