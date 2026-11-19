@@ -1,6 +1,6 @@
 /* Aarush Estimation – app core: utilities, local store, cloud sync */
 'use strict';
-const APP_VERSION = '1.8.16';
+const APP_VERSION = '1.8.17';
 const $ = (s, el) => (el || document).querySelector(s);
 const $$ = (s, el) => Array.from((el || document).querySelectorAll(s));
 const esc = (s) => String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

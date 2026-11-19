@@ -90,7 +90,7 @@ ACT.uploadRab = async (el) => {
   if (r.action !== 'ok') return;
   const formatOnly = r.values.mode === 'format';
   if (formatOnly) { // a format file must not touch any bill's figures: read it again without the "previous" corrections
-    try { out = RabImport.mergeRab(ex, wbs.map((w) => ({ name: w.name, wb: w.wb })), { noPrevFix: true }); } catch (e) { toast(e.message); return; }
+    try { out = RabImport.mergeRab(ex, wbs.map((w) => ({ name: w.name, wb: w.wb })), { noPrevFix: true, asLatest: true }); } catch (e) { toast(e.message); return; }
     ({ project, allBills, allSections, report } = out);
   }
   // format only: the bills made from the file are dropped; bills only re-filed under a rate split (if any) are kept
@@ -105,9 +105,9 @@ ACT.uploadRab = async (el) => {
   resetCalc();
   let relinked = 0; // new links from the workbook: fill the linked coats of the draft bills (cells typed by hand stay)
   if (report.linksChanged && typeof applyLinks === 'function') { const P2 = proj(p.id); for (const b of billsOf(p.id).filter((x) => (x.status || 'Draft') === 'Draft')) { const n = applyLinks(P2, b, sectionsOf(p.id).map((x) => x.id)); if (n) { await Store.put('bill', b); relinked += n; } } resetCalc(); }
-  if (relinked) report.links = (report.links || 0) + ' (' + relinked + ' coats filled in draft bills)';
+
   Sync.schedule(300); render();
-  if (formatOnly) { toast(`Format updated${report.renamed ? ' · ' + report.renamed + ' locations renamed' : ''}${report.newSections ? ' · ' + report.newSections + ' new locations' : ''}${report.links ? ' · ' + report.links + ' links from formulas' : ''} – bills unchanged`, 5000); return; }
+  if (formatOnly) { toast(`Format updated${report.renamed ? ' · ' + report.renamed + ' locations renamed' : ''}${report.newSections ? ' · ' + report.newSections + ' new locations' : ''}${report.links ? ' · ' + report.links + ' links from formulas' : ''}${relinked ? ' · ' + relinked + ' linked coats filled in draft bills' : ''} – bill amounts unchanged`, 5000); return; }
   toast([report.added.length ? 'Added ' + report.added.join(', ') : '', report.replaced.length ? 'Replaced ' + report.replaced.join(', ') : ''].filter(Boolean).join(' · ') || 'Saved');
 };
 

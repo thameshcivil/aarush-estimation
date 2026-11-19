@@ -632,7 +632,7 @@
       try { one = buildProject([{ name: w.name, wb: w.wb }], { id: P.id, contractorId: P.contractorId, name: P.name, tax: P.tax, links: P.links }); } catch (e) { report.skipped.push(w.name + ': ' + e.message); return; }
       const O = one.project; const seq = w.inv.rab;
       const maxSeq = Math.max(0, ...live().map((b) => b.seq));
-      const isLatest = seq >= maxSeq;
+      const isLatest = opt.asLatest || seq >= maxSeq; // a Format only upload is the format to follow, whatever RAB number its invoice shows
       report.unmatched.push(...one.report.unmatched); report.warnings.push(...(one.report.warnings || []));
       // blocks (by id, then by name)
       const bmap = {};
