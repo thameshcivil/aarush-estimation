@@ -386,9 +386,9 @@
         const L = out[r.key] = out[r.key] || Object.assign({ blockId: r.block, pore: r.pore, cats: {}, ord: (wb.worksheets.indexOf(ws) + 1) * 100000 + r.r }, r.meta);
         if (r.elev && !L.elev) L.elev = r.elev;
         (r.notes || []).forEach((n) => { // the coat whose columns hold the comment, else the sheet's first category
-          let best = null, bd = 1e9; assign.forEach((g) => { [g.cumC, g.prevC, g.cumC - 1, g.cumC - 2].filter(Boolean).forEach((c) => { const d = Math.abs(c - n.c) + (c > n.c ? 0.5 : 0); if (d < bd) { bd = d; best = g; } }); });
+          let best = assign.find((g) => g.c0 && g.c1 && g.c0 <= n.c && n.c <= g.c1) || null, bd = best ? 0 : 1e9; if (!best) assign.forEach((g) => { [g.cumC, g.prevC, g.cumC - 1, g.cumC - 2].filter(Boolean).forEach((c) => { const d = Math.abs(c - n.c) + (c > n.c ? 0.5 : 0); if (d < bd) { bd = d; best = g; } }); });
           if (n.remark || n.c <= 2 || bd > 6) best = assign[0] && { cat: assign[0].cat };
-          L.notes = L.notes || []; if (!L.notes.some((x) => x.text === n.text && x.cat === (best && best.cat))) L.notes.push({ text: n.text, cat: best ? best.cat : '', wi: best && best.wi ? best.wi : '', sheet: ws.name, cell: n.cell });
+          L.notes = L.notes || []; if (!L.notes.some((x) => x.text === n.text && x.cat === (best && best.cat) && x.wi === (best && best.wi ? best.wi : ''))) L.notes.push({ text: n.text, cat: best ? best.cat : '', wi: best && best.wi ? best.wi : '', sheet: ws.name, cell: n.cell });
         }); // ord: where it first appears in the workbook
         const seenTc = new Set(); const here = (wb.worksheets.indexOf(ws) + 1) * 100000 + r.r;
         assign.forEach((g) => {
