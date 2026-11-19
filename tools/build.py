@@ -1,4 +1,5 @@
 """Build the single-file web app into www/ (used by GitHub Pages and the Android app)."""
+import subprocess, glob as _g
 import shutil, os
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(ROOT)
@@ -15,3 +16,10 @@ for f in os.listdir('assets'):
     shutil.copy('assets/' + f, OUT + '/' + f)
 open(OUT + '/.nojekyll', 'w').close()
 print('built', OUT + '/index.html', os.path.getsize(OUT + '/index.html'), 'bytes')
+
+# syntax check every source file so a broken file never ships
+for f in sorted(_g.glob('src/*.js')):
+    r = subprocess.run(['node', '--check', f], capture_output=True, text=True)
+    if r.returncode:
+        raise SystemExit('SYNTAX ERROR in ' + f + '\n' + r.stderr)
+print('syntax ok')
