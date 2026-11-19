@@ -540,6 +540,8 @@ function vBill(r) {
     <span class="sp"></span>
     <div class="amt" style="margin-right:6px"><div class="small muted">This bill (net)</div><div style="font-weight:700;font-size:17px">₹ ${inr(res.invoice.cur.net)}</div></div>
     <button class="btn a" data-act="exportBill" data-id="${b.id}">⬇ Excel</button></div>
+    ${b.frozen && (b.status || 'Draft') === 'Draft' ? (() => { let lv = null; try { const t = Object.assign({}, b); delete t.frozen; lv = Calc.computeBill(p, sectionsOf(p.id), billsOf(p.id).map((x) => (x.id === b.id ? t : x)), t).invoice.cur.net; } catch (e) { /* – */ }
+      return `<div class="warnbox small" style="margin:8px 0 0">This bill’s amount is fixed to an uploaded workbook’s abstract (₹ ${inr(res.invoice.cur.net)} net)${lv !== null ? `, but the progress in the app adds up to <b>₹ ${inr(lv)} net</b>` : ''}. <a href="#" data-act="unlock" data-id="${b.id}">Use the progress in the app</a></div>`; })() : ''}
     ${b.backup ? `<div class="warnbox small" style="margin:8px 0 0">This bill was replaced by an upload of <b>${esc(b.backup.file)}</b> on ${fmtD(String(b.backup.at).slice(0, 10))}. <a href="#" data-act="billRestore" data-id="${b.id}">Restore the bill as it was before</a> · <a href="#" data-act="billBackupDrop" data-id="${b.id}">keep this one</a></div>` : ''}
     ${!ed ? `<div class="small muted" style="margin-top:6px">This bill is ${esc(b.status)} – figures are frozen. <a href="#" data-act="unlock" data-id="${b.id}">Unlock to edit</a></div>` : ''}
     ${res.warnings.length ? `<div class="warnbox" style="margin:10px 0 0">${res.warnings.map(esc).join('<br>')}</div>` : ''}</div>`;
