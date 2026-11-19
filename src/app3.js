@@ -2,7 +2,12 @@
 
 const blockOf = (p, id) => (p.blocks || []).find((b) => b.id === id) || { id, name: id, pores: [], floors: [] };
 const p2 = (x) => Calc.pad2(x);
-const secSort = (a, b) => Calc.cmpSort([N(a.floorNo) ?? 999, p2(a.series) || 'zz', a.name || ''], [N(b.floorNo) ?? 999, p2(b.series) || 'zz', b.name || '']) || (N(a.order) || 0) - (N(b.order) || 0);
+// locations keep the order of the workbook (rows as in the Qty Abst sheets) within each floor; others by series and name
+const secSort = (a, b) => { const fa = N(a.floorNo) ?? 999, fb = N(b.floorNo) ?? 999; if (fa !== fb) return fa - fb;
+  if (a.ord !== undefined && b.ord !== undefined && a.ord !== b.ord) return a.ord - b.ord;
+  return Calc.cmpSort([p2(a.series) || 'zz', a.name || ''], [p2(b.series) || 'zz', b.name || '']) || (N(a.order) || 0) - (N(b.order) || 0); };
+// within one category: the order of the rows in that category's own sheet (External sheets keep their order)
+const catSort = (cat) => (a, b) => { const x = a.ordc && a.ordc[cat], y = b.ordc && b.ordc[cat]; if (x !== undefined && y !== undefined) return x - y; if (x !== undefined) return -1; if (y !== undefined) return 1; return secSort(a, b); };
 UI.rf = UI.rf || {};
 
 function locOptions(p, blk, secs) {
@@ -212,7 +217,7 @@ ACT.unlinkTpl = (el) => { const s = Store.get(el.dataset.s); const t = Store.get
 function progressRows(p, blockId, cat) {
   const blk = blockOf(p, blockId);
   return sectionsOf(p.id).filter((s) => s.blockId === blockId && !s.isTemplate && locMatch(s, blk, UI.pf))
-    .map((s) => [s, Calc.sectionTotals(s, p)]).filter(([, t]) => t[cat] !== undefined).sort((a, b) => secSort(a[0], b[0]));
+    .map((s) => [s, Calc.sectionTotals(s, p)]).filter(([, t]) => t[cat] !== undefined).sort((a, b) => catSort(cat)(a[0], b[0]));
 }
 /* category groups: Internal, Shaft / OTS / Duct, External (set per category in Measurement categories; Auto by name) */
 const ZONES = { int: 'Internal', shaft: 'Shaft / OTS / Duct', ext: 'External' };

@@ -259,7 +259,7 @@
     return ws;
   }
   function colL(n) { let s = ''; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; }
-  const byLoc = (a, b) => C.cmpSort([C.num(a.floorNo) ?? 999, C.pad2(a.series) || 'zz', String(a.name || '')], [C.num(b.floorNo) ?? 999, C.pad2(b.series) || 'zz', String(b.name || '')]);
+  const byLoc = (a, b) => (C.num(a.floorNo) ?? 999) - (C.num(b.floorNo) ?? 999) || ((a.ord !== undefined && b.ord !== undefined) ? a.ord - b.ord : 0) || C.cmpSort([C.pad2(a.series) || 'zz', String(a.name || '')], [C.pad2(b.series) || 'zz', String(b.name || '')]);
   const bySort = (a, b) => (C.num(a.order) || 0) - (C.num(b.order) || 0) || String(a.name).localeCompare(String(b.name), undefined, { numeric: true });
 
   /* ---------------- Measurement sheet per block ---------------- */

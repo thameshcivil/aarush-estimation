@@ -377,9 +377,11 @@
       (rep.layout = rep.layout || []).push({ ws, tr, rows: rows.map((r) => ({ r: r.r, key: r.key, meta: r.meta, block: r.block })), assign });
       // ---- pass 3: aggregate
       rows.forEach((r) => {
-        const L = out[r.key] = out[r.key] || Object.assign({ blockId: r.block, pore: r.pore, cats: {} }, r.meta);
-        const seenTc = new Set();
+        const L = out[r.key] = out[r.key] || Object.assign({ blockId: r.block, pore: r.pore, cats: {}, ord: (wb.worksheets.indexOf(ws) + 1) * 100000 + r.r }, r.meta); // ord: where it first appears in the workbook
+        const seenTc = new Set(); const here = (wb.worksheets.indexOf(ws) + 1) * 100000 + r.r;
         assign.forEach((g) => {
+          // the row's place in the sheet that holds this category, so each category lists its rows as its own sheet does
+          L.ordc = L.ordc || {}; if (L.ordc[g.cat] === undefined || here < L.ordc[g.cat]) L.ordc[g.cat] = here;
           const tot = r.v[g.tc]; if (!tot) return;
           const K = L.cats[g.cat] = L.cats[g.cat] || { total: 0, cum: {}, prev: {} };
           const tk = g.cat + '|' + g.tc; if (!seenTc.has(tk)) { K.total += tot; seenTc.add(tk); }
@@ -499,7 +501,7 @@
       const L = locLatest.locs[key]; const rows = [];
       Object.keys(L.cats).forEach((cat) => { if (L.cats[cat].total) rows.push({ id: 'm' + rows.length, desc: 'Quantity abstract ' + latest.inv.rabNo, cat, direct: Math.round(L.cats[cat].total * 1e6) / 1e6, coef: 1 }); });
       if (!rows.length) return;
-      const s = { id: `s_${base.id}_${++order}`, projectId: base.id, blockId: L.blockId, name: L.name, kind: L.kind, flatNo: L.flatNo, series: L.series, floor: L.floor, floorNo: L.floorNo, pore: L.pore || '', mult: 1, ref: '', order, rows, openingPct: {} };
+      const s = { id: `s_${base.id}_${++order}`, projectId: base.id, blockId: L.blockId, name: L.name, kind: L.kind, flatNo: L.flatNo, series: L.series, floor: L.floor, floorNo: L.floorNo, pore: L.pore || '', mult: 1, ref: '', order, ord: L.ord, ordc: L.ordc || {}, rows, openingPct: {} };
       sections.push(s); secByKey[key] = s;
     });
     // floors per block
@@ -669,6 +671,8 @@
           if (isLatest) { s.rows = keep.concat(rows1.map((r, i) => Object.assign(r, { id: 'm' + (keep.length + i) + stamp }))); chS.add(s.id); }
           else { const add = rows1.filter((r) => !have.has(r.cat)); if (add.length) { s.rows = (s.rows || []).concat(add.map((r, i) => Object.assign(r, { id: 'm' + i + stamp }))); chS.add(s.id); } }
         }
+        if (isLatest && s1.ord !== undefined && s.ord !== s1.ord) { s.ord = s1.ord; chS.add(s.id); } // workbook order
+        if (isLatest && s1.ordc && JSON.stringify(s.ordc || {}) !== JSON.stringify(s1.ordc)) { s.ordc = s1.ordc; chS.add(s.id); }
         smap[s1.id] = s.id;
       });
       const secById = {}; sections.forEach((s) => { secById[s.id] = s; });

@@ -531,7 +531,7 @@ function vBill(r) {
   const b = Store.get(r.a); if (!b) return { title: 'Not found', html: '<div class="empty">Bill not found.</div>', back: 'bills' };
   const p = proj(b.projectId); const c = Store.get(p.contractorId) || {};
   const res = compute(b); const tab = r.b || 'progress';
-  const tabs = [['progress', 'Progress'], ['direct', 'Direct qty'], ['abstract', 'Abstract'], ['invoice', 'Invoice'], ['track', 'Status & payments']];
+  const tabs = [['progress', 'Progress'], ['billed', 'This bill'], ['direct', 'Direct qty'], ['abstract', 'Abstract'], ['invoice', 'Invoice'], ['track', 'Status & payments']];
   const ed = (b.status || 'Draft') === 'Draft';
   const v = (p.versions || []).find((x) => x.id === b.versionId) || {};
   const head = `<div class="card" style="padding:12px 16px"><div class="row">
@@ -542,7 +542,7 @@ function vBill(r) {
     <button class="btn a" data-act="exportBill" data-id="${b.id}">⬇ Excel</button></div>
     ${!ed ? `<div class="small muted" style="margin-top:6px">This bill is ${esc(b.status)} – figures are frozen. <a href="#" data-act="unlock" data-id="${b.id}">Unlock to edit</a></div>` : ''}
     ${res.warnings.length ? `<div class="warnbox" style="margin:10px 0 0">${res.warnings.map(esc).join('<br>')}</div>` : ''}</div>`;
-  const body = { progress: bProgress, direct: bDirect, abstract: bAbstract, invoice: bInvoice, track: bTrack }[tab](b, p, c, res, ed);
+  const body = { progress: bProgress, billed: bThisBill, direct: bDirect, abstract: bAbstract, invoice: bInvoice, track: bTrack }[tab](b, p, c, res, ed);
   return { title: `${esc(b.rabNo)} <span class="sub">· ${esc(p.name)}</span>`, back: `project/${p.id}/bills`,
     html: head + `<div class="tabs">${tabs.map(([k, l]) => `<a href="#/bill/${b.id}/${k}" class="${k === tab ? 'on' : ''}">${l}</a>`).join('')}</div>` + body };
 }
