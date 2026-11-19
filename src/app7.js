@@ -73,6 +73,7 @@ ACT.uploadRab = async (el) => {
   }).join('');
   const notes = [];
   if (report.newItems) notes.push(`${report.newItems} new item(s) / rate(s) added`);
+  if (report.renamed) notes.push(`${report.renamed} location(s) renamed`);
   if (report.newSections) notes.push(`${report.newSections} new location(s) added`);
   const body = `${errors.length ? `<div class="warnbox">${errors.map(esc).join('<br>')}</div>` : ''}
     ${report.skipped.length ? `<div class="warnbox">${report.skipped.map(esc).join('<br>')}</div>` : ''}
@@ -80,10 +81,17 @@ ACT.uploadRab = async (el) => {
     ${notes.length ? `<p class="small">${notes.map(esc).join(' · ')}</p>` : ''}
     ${(report.warnings || []).length ? `<div class="warnbox small">${report.warnings.map(esc).join('<br>')}</div>` : ''}
     ${report.unmatched.length ? `<p class="small muted">Abstract lines not placed: ${report.unmatched.slice(0, 8).map(esc).join('; ')}</p>` : ''}
-    <p class="small muted">A bill with the same RAB number as one in the app replaces it (same bill, corrected). A new number is added after the last bill. Every location’s % is taken from the file, and the newest file becomes the workbook used for “Download Excel”.</p>`;
+    <label class="f" style="margin-top:10px">What is this file?<select name="mode">
+      <option value="bill">A running bill – add it (new RAB number) or replace the bill with the same number</option>
+      <option value="format" ${report.replaced.length && !report.added.length ? 'selected' : ''}>Format only – update names, measurements and the Excel format; keep every bill as it is</option></select></label>
+    <p class="small muted">Running bill: a bill with the same RAB number replaces the app’s bill (same bill, corrected); a new number is added after the last bill, with every location’s % from the file. Format only: use this when you have reworked the workbook (renamed flats, new formulas, added rows) before billing the next RAB in the app – bills and their % are not touched, and this file becomes the workbook used for “⬇ Excel”.</p>`;
   const r = await dialog(`Upload running bill – ${p.name}`, body, report.files.length ? [['cancel', 'Cancel'], ['ok', 'Save', 'p']] : [['cancel', 'Close']]);
   if (r.action !== 'ok') return;
-  const batch = [{ kind: 'project', data: project }, ...out.bills.map((b) => ({ kind: 'bill', data: b })), ...out.sections.map((s) => ({ kind: 'section', data: s }))];
+  const formatOnly = r.values.mode === 'format';
+  // format only: the bills made from the file are dropped; bills only re-filed under a rate split (if any) are kept
+  const fileBills = new Set(report.files.map((f) => f.billId));
+  const billsToSave = formatOnly ? out.bills.filter((b) => !fileBills.has(b.id)) : out.bills;
+  const batch = [{ kind: 'project', data: project }, ...billsToSave.map((b) => ({ kind: 'bill', data: b })), ...out.sections.map((s) => ({ kind: 'section', data: s }))];
   await Store.putMany(batch);
   try {
     const byName = {}; wbs.forEach((w) => { byName[w.name] = w; });
@@ -91,6 +99,7 @@ ACT.uploadRab = async (el) => {
   } catch (e) { console.error(e); }
   resetCalc();
   Sync.schedule(300); render();
+  if (formatOnly) { toast(`Format updated${report.renamed ? ' · ' + report.renamed + ' locations renamed' : ''}${report.newSections ? ' · ' + report.newSections + ' new locations' : ''} – bills unchanged`, 5000); return; }
   toast([report.added.length ? 'Added ' + report.added.join(', ') : '', report.replaced.length ? 'Replaced ' + report.replaced.join(', ') : ''].filter(Boolean).join(' · ') || 'Saved');
 };
 
