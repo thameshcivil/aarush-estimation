@@ -595,7 +595,7 @@
       if (!g.c0 || !g.c1) return;
       for (let c = g.c0; c <= g.c1; c++) {
         // the most common formula of this column (rows written the same way), if it reads another coat
-        const pats = {}; L.rows.forEach((row) => { const f = fOf(L.ws.getCell(row.r, c)); if (!f || !/!|INDEX/i.test(f)) return; const k = f.replace(/(\$?[A-Z]{1,3})\$?\d+/g, '$1#'); (pats[k] = pats[k] || { n: 0, f }).n++; });
+        const pats = {}; L.rows.forEach((row) => { const f = fOf(L.ws.getCell(row.r, c)); if (!f || !/[A-Z]\$?\d/i.test(f)) return; /* any reference: another sheet, or another coat of the same row (Toilet wall % = ceiling %) */ const k = f.replace(/(\$?[A-Z]{1,3})\$?\d+/g, '$1#'); (pats[k] = pats[k] || { n: 0, f }).n++; });
         const best = Object.values(pats).sort((a, b) => b.n - a.n)[0]; if (!best || best.n < 2) continue;
         const rules = rulesOf(g, tokens(L, g, best.f)); if (!rules.length) continue;
         rules.forEach((r) => { const k = g.wi + '<' + r.source + '|' + r.mode + '|' + (r.gt ?? '') + '|' + (r.set ?? ''); if (seen.has(k)) return; seen.add(k);
