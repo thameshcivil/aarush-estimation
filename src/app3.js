@@ -9,17 +9,25 @@ const secSort = (a, b) => { const fa = N(a.floorNo) ?? 999, fb = N(b.floorNo) ??
 // within one category: the order of the rows in that category's own sheet (External sheets keep their order)
 const catSort = (cat) => (a, b) => { const x = a.ordc && a.ordc[cat], y = b.ordc && b.ordc[cat]; if (x !== undefined && y !== undefined) return x - y; if (x !== undefined) return -1; if (y !== undefined) return 1; return secSort(a, b); };
 UI.rf = UI.rf || {};
+/* the elevation a location sits under ("East Side Elevation" heading in the sheet, else from its name) */
+function elevOf(s) {
+  if (s.elev) return s.elev;
+  const m = String(s.name || '').match(/(?:^|[^a-z])(north|south|east|west)\s*[-_ ]?\s*(side|facing|faceing)(?![a-z])/i);
+  return m ? m[1][0].toUpperCase() + m[1].slice(1).toLowerCase() + ' Side' : '';
+}
+/* label under a location: its pore/core, or for common areas its elevation */
+function locSub(s, blk) { const p = Calc.sectionPore(s, blk); return p === 'Common' && s.kind !== 'flat' ? (elevOf(s) || p) : p; }
 
 function locOptions(p, blk, secs) {
   const pores = []; (blk.pores || []).forEach((x) => pores.push(x.name));
-  secs.forEach((s) => { const n = Calc.sectionPore(s, blk); if (!pores.includes(n)) pores.push(n); });
+  secs.forEach((s) => { const n = locSub(s, blk); if (!pores.includes(n)) pores.push(n); });
   const floors = (blk.floors || []).slice();
   secs.slice().sort((a, b) => (N(a.floorNo) ?? 999) - (N(b.floorNo) ?? 999)).forEach((s) => { if (s.floor && !floors.includes(s.floor)) floors.push(s.floor); });
   const series = [...new Set(secs.map((s) => p2(s.series)).filter(Boolean))].sort();
   return { pores, floors, series };
 }
 function locMatch(s, blk, f) {
-  if (f.pore && Calc.sectionPore(s, blk) !== f.pore) return false;
+  if (f.pore && locSub(s, blk) !== f.pore && Calc.sectionPore(s, blk) !== f.pore) return false;
   if (f.floor && (s.floor || '') !== f.floor) return false;
   if (f.series && p2(s.series) !== f.series) return false;
   if (f.kind === 'flat' && s.kind !== 'flat') return false;
@@ -33,7 +41,7 @@ function filterBar(st, p, blk, secs, opts) {
   const sel = (k, label, list) => `<select data-ch="lf" data-st="${st}" data-f="${k}" style="max-width:170px"><option value="">${label}</option>${list.map((x) => `<option ${f[k] === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>`;
   const active = ['pore', 'floor', 'series', 'kind', 'q'].some((k) => f[k]);
   return `<div class="row" style="margin-bottom:10px">
-    ${o.pores.length > 1 ? sel('pore', 'All pores', o.pores) : ''}
+    ${o.pores.length > 1 ? sel('pore', 'All pores / elevations', o.pores) : ''}
     ${o.series.length ? sel('series', 'All series', o.series) : ''}
     ${o.floors.length ? sel('floor', 'All floors', o.floors) : ''}
     ${opts && opts.kind ? `<select data-ch="lf" data-st="${st}" data-f="kind" style="max-width:150px"><option value="">Flats & common</option><option value="flat" ${f.kind === 'flat' ? 'selected' : ''}>Flats only</option><option value="common" ${f.kind === 'common' ? 'selected' : ''}>Common areas</option><option value="template" ${f.kind === 'template' ? 'selected' : ''}>Typical templates</option></select>` : ''}
@@ -58,7 +66,7 @@ function pMeasure(p) {
   const list = shown.slice(0, LIMIT).map((s) => {
     const t = Calc.sectionTotals(s, p);
     const head = s.floor !== lastF ? `<div class="small" style="font-weight:700;color:var(--brand2);padding:10px 4px 2px;border-bottom:1px solid var(--line)">${esc(s.floor || '—')}</div>` : ''; lastF = s.floor;
-    const tags = [s.isTemplate ? '<span class="badge Certified">Typical template</span>' : '', s._linked ? '<span class="badge Submitted">linked to typical</span>' : '', s.series ? `<span class="badge">Series ${esc(p2(s.series))}</span>` : '', `<span class="badge">${esc(Calc.sectionPore(s, blk))}</span>`].join(' ');
+    const tags = [s.isTemplate ? '<span class="badge Certified">Typical template</span>' : '', s._linked ? '<span class="badge Submitted">linked to typical</span>' : '', s.series ? `<span class="badge">Series ${esc(p2(s.series))}</span>` : '', `<span class="badge">${esc(locSub(s, blk))}</span>`].join(' ');
     return head + `<a class="it" href="#/section/${s.id}"><div class="grow"><div class="t">${esc(s.name)} ${N(s.mult) > 1 ? `<span class="badge">×${esc(s.mult)}</span>` : ''} ${tags}</div><div class="m">${Object.keys(t).slice(0, 4).map((k) => `${esc((cats[k] || {}).name || k)}: ${qf(t[k])}`).join(' · ') || 'No measurements yet'}</div></div><span class="muted">›</span></a>`;
   }).join('');
   return `${bc.html}
@@ -265,7 +273,7 @@ function bProgress(b, p, c, res, ed) {
   const body = rows.slice(0, LIMIT).map(([s, t]) => {
     const head = s.floor !== lastF ? floorHead(2 + its.length, s.floor) : ''; lastF = s.floor;
     const xo = !!UI.xp[s.id];
-    return head + `<tr${xo ? ' class="xon"' : ''}><td class="stick"><button class="xbtn" data-act="xpand" data-s="${s.id}" title="All ${ZONES[zoneOf(cm[cur])]} items of this location">${xo ? '▴' : '▾'}</button><a href="#/section/${s.id}">${esc(s.name)}</a><div class="small muted">${esc(Calc.sectionPore(s, blk))}${s.series ? ' · S' + esc(p2(s.series)) : ''}</div></td><td class="n">${qf(t[cur])}</td>
+    return head + `<tr${xo ? ' class="xon"' : ''}><td class="stick"><button class="xbtn" data-act="xpand" data-s="${s.id}" title="All ${ZONES[zoneOf(cm[cur])]} items of this location">${xo ? '▴' : '▾'}</button><a href="#/section/${s.id}">${esc(s.name)}</a><div class="small muted">${esc(locSub(s, blk))}${s.series ? ' · S' + esc(p2(s.series)) : ''}</div></td><td class="n">${qf(t[cur])}</td>
     ${its.map((it) => { const pv = Calc.prevPct(s, it.id, b, sorted); const cv = Calc.curPct(s, it.id, b, sorted); const has = b.progress && b.progress[s.id] && b.progress[s.id][it.id] !== undefined; const lnk = has && b.linked && b.linked[s.id] && b.linked[s.id][it.id]; return `<td class="n pct"><input class="num" title="${lnk ? 'Filled from the linked master coat – type to override' : ''}" style="width:62px;${lnk ? 'background:#e8f1fb;color:#1d5f99;font-weight:600' : has && cv !== pv ? 'background:#eaf6ee;font-weight:600' : ''}" type="number" step="any" min="0" max="100" value="${has ? esc(+cv.toFixed(2)) : ''}" placeholder="${+pv.toFixed(1)}" ${ed ? '' : 'disabled'} data-ch="pct" data-b="${b.id}" data-s="${s.id}" data-w="${it.id}" data-k="p${s.id}${it.id}"><small>${lnk ? '🔗 ' : ''}prev ${+pv.toFixed(1)}%</small></td>`; }).join('')}</tr>` + (xo ? zonePanel(b, p, s, zoneOf(cm[cur]), sorted, ed, ibc, cm, 2 + its.length) : '');
   }).join('');
   const bulk = ed ? `<tr style="background:#fbfcfd"><td class="stick small"><b>Set for all ${rows.length} shown</b><div class="muted">blank = clear</div></td><td></td>${its.map((it) => `<td class="n"><input class="num" style="width:56px" type="number" step="any" min="0" max="100" data-k="bulk${it.id}" placeholder="%"><div><a href="#" class="small" data-act="pctBulk" data-b="${b.id}" data-p="${p.id}" data-bl="${bc.cur}" data-c="${cur}" data-w="${it.id}">apply</a></div></td>`).join('')}</tr>` : '';
