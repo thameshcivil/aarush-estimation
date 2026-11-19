@@ -14,50 +14,48 @@ function thisBillLines(b, p, res) {
   });
 }
 function bThisBill(b, p, c, res) {
-  const all = thisBillLines(b, p, res); const f = UI.tb;
-  const blocks = [...new Set(all.map((x) => x.block))];
-  const rows = all.filter((x) => (!f.blk || x.block === f.blk) && (!f.zone || x.zone === f.zone) && (!f.q || (x.s.name + ' ' + x.coat + ' ' + x.catName).toLowerCase().includes(f.q.toLowerCase())));
-  const tAmt = rows.reduce((t, x) => t + x.amt, 0); const nLoc = new Set(rows.map((x) => x.sid)).size;
-  const frozenNote = b.frozen ? `<p class="small muted">This bill was uploaded from its workbook: the bill amount comes from the workbook’s abstract (₹ ${inr(res.invoice.cur.gross)} gross); this list shows the locations from their % in the quantity sheets.</p>` : '';
-  const nm = (s) => (s.name || '') + (s.kind === 'flat' ? '' : '');
-  let body = '';
-  if (!rows.length) body = `<div class="empty">${all.length ? 'Nothing matches the filter.' : 'Nothing billed in this bill yet – enter progress on the Progress tab.'}</div>`;
-  else if (f.view === 'item') {
-    const g = {}; rows.forEach((x) => { const k = x.wi + '@' + x.rate; const o = g[k] = g[k] || { x, qty: 0, amt: 0, locs: new Set() }; o.qty += x.qty; o.amt += x.amt; o.locs.add(x.sid); });
-    const list = Object.values(g).sort((a, c) => String(a.x.group).localeCompare(String(c.x.group)) || String(a.x.coat).localeCompare(String(c.x.coat)));
-    let lastG = null;
-    body = `<div class="tw" style="max-height:68vh"><table class="t"><thead><tr><th>Item</th><th class="n">Locations</th><th class="n">Qty this bill</th><th>Unit</th><th class="n">Rate</th><th class="n">Amount</th></tr></thead><tbody>
-      ${list.map((o) => { const gh = o.x.group !== lastG ? `<tr class="grp"><td colspan="6">${esc(o.x.group)}</td></tr>` : ''; lastG = o.x.group; return gh + `<tr><td>${esc(o.x.coat)}</td><td class="n">${o.locs.size}</td><td class="n">${qf(o.qty)}</td><td>${esc(o.x.unit)}</td><td class="n">${inr(o.x.rate, 2)}</td><td class="n">${inr(o.amt, 2)}</td></tr>`; }).join('')}
-      <tr class="tot"><td>Total</td><td class="n">${nLoc}</td><td></td><td></td><td></td><td class="n">${inr(tAmt, 2)}</td></tr></tbody></table></div>`;
-  } else {
-    // by location: block → location → its coats
-    const bySec = {}; const order = []; rows.forEach((x) => { if (!bySec[x.sid]) { bySec[x.sid] = []; order.push(x.sid); } bySec[x.sid].push(x); });
-    const ok = (sid) => { const o = bySec[sid][0].s.ordc || {}; const v = bySec[sid].map((x) => o[x.cat]).filter((x) => x !== undefined); return v.length ? Math.min(...v) : Infinity; };
-    order.sort((a, c) => { const A = bySec[a][0], C = bySec[c][0]; const ka = ok(a), kc = ok(c); return String(A.block).localeCompare(String(C.block), undefined, { numeric: true }) || (ka !== kc ? (ka === Infinity ? 1 : kc === Infinity ? -1 : ka - kc) : secSort(A.s, C.s)); });
-    let lastB = null, lastF = null;
-    body = `<div class="tw" style="max-height:68vh"><table class="t"><thead><tr><th>Location</th><th>Item</th><th class="n">Total qty</th><th class="n">Previous %</th><th class="n">Now %</th><th class="n">Qty this bill</th><th class="n">Rate</th><th class="n">Amount</th></tr></thead><tbody>
-      ${order.map((sid) => { const L = bySec[sid]; const s = L[0].s; let h = '';
-        if (L[0].block !== lastB) { h += `<tr class="grp"><td colspan="8">${esc(L[0].block)}</td></tr>`; lastB = L[0].block; lastF = null; }
-        if (s.floor !== lastF) { h += `<tr><td colspan="8" class="small" style="font-weight:700;color:var(--brand2);background:#fafcfe">${esc(s.floor || '—')}</td></tr>`; lastF = s.floor; }
-        const sub = L.reduce((t, x) => t + x.amt, 0);
-        return h + L.map((x, i) => `<tr><td>${i === 0 ? `<a href="#/section/${sid}"><b>${esc(nm(s))}</b></a><div class="small muted">${esc(locSub(s, blockOf(p, s.blockId)))}</div>${notesHtml(s)}` : ''}</td><td>${esc(x.coat)}<div class="small muted">${esc(x.catName)}</div>${coatNoteHtml(p, s, x.wi)}</td><td class="n">${qf(x.total)}</td><td class="n">${+x.prev.toFixed(2)}%</td><td class="n"><b>${+x.cur.toFixed(2)}%</b></td><td class="n">${qf(x.qty)}</td><td class="n">${inr(x.rate, 2)}</td><td class="n">${inr(x.amt, 2)}</td></tr>`).join('')
-          + (L.length > 1 ? `<tr class="sub"><td></td><td colspan="6" class="small">${esc(nm(s))} – ${L.length} items</td><td class="n">${inr(sub, 2)}</td></tr>` : ''); }).join('')}
-      <tr class="tot"><td colspan="7">Total – ${nLoc} location(s), ${rows.length} item line(s)</td><td class="n">${inr(tAmt, 2)}</td></tr></tbody></table></div>`;
-  }
-  const chip = (k, v, l, on) => `<button class="chip ${on ? 'on' : ''}" data-act="tbF" data-k="${k}" data-v="${esc(v)}">${esc(l)}</button>`;
-  return `<div class="card"><h2>Billed in ${esc(b.rabNo)}<span class="sp"></span><button class="btn sm" data-act="tbExport" data-id="${b.id}">⬇ List (Excel)</button></h2>
-    <div class="grid g4" style="margin-bottom:10px">
-      <div class="kpi"><div class="l">Locations billed</div><div class="v">${nLoc}</div><div class="s">${rows.length} item lines</div></div>
-      <div class="kpi"><div class="l">Amount of the list</div><div class="v">₹ ${inr(Math.round(tAmt))}</div><div class="s">bill gross ₹ ${inr(res.invoice.cur.gross)}</div></div>
-    </div>
-    <div class="chips">${chip('view', 'loc', 'By location', f.view !== 'item')}${chip('view', 'item', 'By item', f.view === 'item')}</div>
-    ${blocks.length > 1 ? `<div class="chips">${chip('blk', '', 'All blocks', !f.blk)}${blocks.map((x) => chip('blk', x, x, f.blk === x)).join('')}</div>` : ''}
-    <div class="row" style="margin:6px 0 10px"><div class="chips" style="margin:0">${chip('zone', '', 'All', !f.zone)}${Object.keys(ZONES).map((z) => chip('zone', z, ZONES[z], f.zone === z)).join('')}</div>
-      <input type="search" placeholder="Search location or item…" data-ch="tbQ" data-live data-k="search-tb" value="${esc(f.q)}" style="max-width:260px"></div>
-    ${frozenNote}${body}</div>`;
+  /* the same layout as the Progress tab – blocks, category chips, locations × coats – showing only what this bill bills */
+  const all = thisBillLines(b, p, res);
+  if (!(p.blocks || []).length) return '<div class="empty">No blocks.</div>';
+  if (!UI.block[p.id] && all.length && !all.some((x) => x.blockId === (p.blocks[0] || {}).id)) UI.block[p.id] = all[0].blockId; // open on a block that has billing
+  const bc = blockChips(p, 'block'); const blk = blockOf(p, bc.cur); const cm = Calc.catMap(p); const ibc = itemsByCatUI(p);
+  const totAll = all.reduce((t, x) => t + x.amt, 0);
+  const head = `<div class="card" style="padding:10px 16px"><div class="row"><div><b>Billed in ${esc(b.rabNo)}</b> <span class="small muted">· ${new Set(all.map((x) => x.sid)).size} locations · ${all.length} coat lines · ₹ ${inr(Math.round(totAll))} (bill gross ₹ ${inr(res.invoice.cur.gross)})</span></div><span class="sp"></span><button class="btn sm" data-act="tbExport" data-id="${b.id}">⬇ List (Excel)</button></div>
+    ${b.frozen ? `<div class="small muted" style="margin-top:4px">Uploaded bill: its amount comes from the workbook’s abstract; this view shows the locations from their % in the quantity sheets.</div>` : ''}</div>`;
+  const inBlk = all.filter((x) => x.blockId === bc.cur);
+  // block chips with what each block bills
+  const amtB = {}; all.forEach((x) => { amtB[x.blockId] = (amtB[x.blockId] || 0) + x.amt; });
+  const chips = bc.html.replace(/data-v="([^"]+)">([^<]*)<\/button>/g, (m, id, n) => `data-v="${id}">${n}${amtB[id] ? ` <span class="small" style="opacity:.75">₹${inr(Math.round(amtB[id]))}</span>` : ''}</button>`);
+  if (!inBlk.length) return head + chips + `<div class="card"><div class="empty">Nothing billed in ${esc(blk.name)} in this bill.</div></div>`;
+  const catIds = []; inBlk.forEach((x) => { if (!catIds.includes(x.cat)) catIds.push(x.cat); });
+  const order = (p.categories || []).map((x) => x.id); catIds.sort((x, y) => order.indexOf(x) - order.indexOf(y));
+  const cur = catIds.includes(UI.cat[p.id]) ? UI.cat[p.id] : catIds[0];
+  const its = ibc[cur] || []; // every coat column, as on the Progress tab
+  const byS = {}; inBlk.filter((x) => x.cat === cur).forEach((x) => { (byS[x.sid] = byS[x.sid] || {})[x.wi] = x; });
+  const blockSecs = sectionsOf(p.id).filter((s2) => s2.blockId === bc.cur && byS[s2.id]);
+  const rows = blockSecs.filter((s2) => locMatch(s2, blk, UI.pf)).sort(catSort(cur));
+  const colQ = its.map(() => 0), colA = its.map(() => 0); let totQ = 0;
+  rows.forEach((s2) => { const L = byS[s2.id]; const t = Object.values(L)[0]; totQ += t ? t.total : 0; its.forEach((it, i) => { const x = L[it.id]; if (x) { colQ[i] += x.qty; colA[i] += x.amt; } }); });
+  let lastF = null;
+  const body = rows.slice(0, LIMIT).map((s2) => {
+    const L = byS[s2.id]; const t = Object.values(L)[0];
+    const fh = s2.floor !== lastF ? floorHead(3 + its.length, s2.floor) : ''; lastF = s2.floor;
+    const amt = Object.values(L).reduce((q, x) => q + x.amt, 0);
+    return fh + `<tr><td class="stick"><a href="#/section/${s2.id}">${esc(s2.name)}</a><div class="small muted">${esc(locSub(s2, blk))}${s2.series ? ' · S' + esc(p2(s2.series)) : ''}</div>${notesHtml(s2, cur)}</td><td class="n">${qf(t ? t.total : 0)}</td>
+      ${its.map((it) => { const x = L[it.id]; const nt = coatNotes(p, s2, it.id).map((n) => n.text).join(' · ');
+        return x ? `<td class="n pct${nt ? ' hasnote' : ''}" title="${nt ? '📝 ' + esc(nt) : ''}"><div class="tbv">${+x.cur.toFixed(2)}%</div><small>prev ${+x.prev.toFixed(1)}% · ${qf(x.qty)}</small></td>`
+          : `<td class="n"><span class="muted small">–</span></td>`; }).join('')}
+      <td class="n"><b>${inr(amt, 2)}</b></td></tr>`;
+  }).join('');
+  return head + chips + `<div class="zones">${zoneChips(catIds, cm, cur, p)}</div>
+  <div class="card"><h2>Billed in ${esc(b.rabNo)} – ${esc((cm[cur] || {}).name || cur)} <span class="small muted">(${esc((cm[cur] || {}).unit || '')})</span></h2>
+  ${filterBar('pf', p, blk, blockSecs, { kind: true })}
+  <div class="tw"><table class="t"><thead><tr><th class="stick">Location</th><th class="n">Total</th>${its.map((it) => `<th class="n" style="white-space:normal;min-width:90px">${esc(it.desc.replace(/^Painting\s*/, ''))}${(() => { const r = ((p.versions || []).find((v) => v.id === b.versionId) || { rates: {} }).rates[it.id]; return r === undefined ? '' : `<div class="small muted">₹ ${r}</div>`; })()}</th>`).join('')}<th class="n">Amount</th></tr></thead>
+  <tbody>${body || `<tr><td colspan="${3 + its.length}" class="empty">No locations match the filters.</td></tr>`}
+  ${rows.length > LIMIT ? `<tr><td class="stick small muted" colspan="${3 + its.length}">Showing ${LIMIT} of ${rows.length} locations – narrow with the filters. Totals below include all ${rows.length}.</td></tr>` : ''}
+  <tr class="tot"><td class="stick">This bill qty (${rows.length} locations)</td><td class="n">${qf(totQ)}</td>${colQ.map((q) => `<td class="n">${qf(q)}</td>`).join('')}<td></td></tr>
+  <tr class="tot"><td class="stick">This bill amount</td><td></td>${colA.map((q) => `<td class="n">${inr(q, 2)}</td>`).join('')}<td class="n">${inr(colA.reduce((q, x) => q + x, 0), 2)}</td></tr></tbody></table></div></div>`;
 }
-ACT.tbF = (el) => { UI.tb[el.dataset.k] = el.dataset.v; render(); };
-CH.tbQ = (el) => { UI.tb.q = el.value; render(); };
 ACT.tbExport = async (el) => {
   const b = Store.get(el.dataset.id); const p = proj(b.projectId); const rows = thisBillLines(b, p, compute(b));
   const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet('Billed in ' + b.rabNo, { views: [{ state: 'frozen', ySplit: 1 }] });
