@@ -145,6 +145,7 @@ ACT.pctBulk = async (el) => {
 };
 ACT.relink = async (el) => {
   const b = Store.get(el.dataset.b); const p = proj(b.projectId);
+  if (b.frozen) return toast('This bill follows its uploaded workbook – unlock it first to re-apply links');
   if (!(await confirmBox('Re-apply all linked coats for every location in this bill? Cells you typed by hand are kept.', 'Re-apply'))) return;
   const n = applyLinks(p, b, sectionsOf(p.id).map((s) => s.id)); Store.put('bill', b); render(); toast(n + ' linked coats updated');
 };

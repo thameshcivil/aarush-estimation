@@ -52,7 +52,7 @@ function bThisBill(b, p, c, res) {
   <div class="card"><h2>Billed in ${esc(b.rabNo)} – ${esc((cm[cur] || {}).name || cur)} <span class="small muted">(${esc((cm[cur] || {}).unit || '')})</span></h2>
   ${filterBar('pf', p, blk, blockSecs, { kind: true })}
   <div class="tw"><table class="t"><thead><tr><th class="stick">Location</th><th class="n">Total</th>${its.map((it) => `<th class="n" style="white-space:normal;min-width:90px">${esc(it.desc.replace(/^Painting\s*/, ''))}${(() => { const r = ((p.versions || []).find((v) => v.id === b.versionId) || { rates: {} }).rates[it.id]; return r === undefined ? '' : `<div class="small muted">₹ ${r}</div>`; })()}</th>`).join('')}<th class="n">Amount</th></tr></thead>
-  <tbody>${body || `<tr><td colspan="${3 + its.length}" class="empty">No locations match the filters.</td></tr>`}
+  <tbody>${body || `<tr><td colspan="${3 + its.length}" class="empty">The filters hide all ${blockSecs.length} billed location(s) here. <a href="#" data-act="lfClear" data-st="pf">Clear filters</a></td></tr>`}
   ${rows.length > LIMIT ? `<tr><td class="stick small muted" colspan="${3 + its.length}">Showing ${LIMIT} of ${rows.length} locations – narrow with the filters. Totals below include all ${rows.length}.</td></tr>` : ''}
   <tr class="tot"><td class="stick">This bill qty (${rows.length} locations)</td><td class="n">${qf(totQ)}</td>${colQ.map((q) => `<td class="n">${qf(q)}</td>`).join('')}<td></td></tr>
   <tr class="tot"><td class="stick">This bill amount</td><td></td>${colA.map((q) => `<td class="n">${inr(q, 2)}</td>`).join('')}<td class="n">${inr(colA.reduce((q, x) => q + x, 0), 2)}</td></tr></tbody></table></div></div>`;

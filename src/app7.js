@@ -64,9 +64,12 @@ ACT.uploadRab = async (el) => {
   toast('', 1);
   let { project, allBills, allSections, report } = out;
   const okMark = (a, b) => (a === null || b === null || b === undefined) ? '<span class="muted">–</span>' : (Math.abs(a - b) <= 2 ? '<span style="color:#1a7f37">✓</span>' : `<span style="color:#c62828">✗ ${inr(a - b)}</span>`);
+  const gap = [];
   const rows = report.files.map((f) => {
     const b = allBills.find((x) => x.id === f.billId); let res = null; try { res = Calc.computeBill(project, allSections, allBills, b); } catch (e) { /* – */ }
     const ig = (f.invoice || {}).gross || {}; const ag = res ? res.invoice.cur.gross : null; const ac = res ? res.invoice.cum.gross : null;
+    // what the quantity sheets' % add up to for this bill, against the abstract the uploaded bill follows
+    try { if (b && b.frozen) { const t = Object.assign({}, b); delete t.frozen; const lv = Calc.computeBill(project, allSections, allBills.map((x) => (x.id === b.id ? t : x)), t).invoice.cur.gross; f.liveGross = lv; if (Math.abs(lv - (ag || 0)) > Math.max(1000, 0.05 * Math.abs(ag || 0))) gap.push({ f, lv, ag }); } } catch (e) { /* – */ }
     return `<tr><td><b>${esc(f.rabNo)}</b> ${f.replaced ? '<span class="pill">replaces the app’s ' + esc(f.rabNo) + '</span>' : '<span class="pill">new</span>'}<div class="small muted">${esc(f.name)}</div></td>
       <td class="n">${ag !== null ? inr(ag) : '–'}<div class="small muted">invoice ${ig.cur != null ? inr(ig.cur) : '–'}</div></td><td>${okMark(ag, ig.cur)}</td>
       <td class="n">${ac !== null ? inr(ac) : '–'}<div class="small muted">invoice ${ig.cum != null ? inr(ig.cum) : '–'}</div></td><td>${okMark(ac, ig.cum)}</td></tr>`;
@@ -89,6 +92,8 @@ ACT.uploadRab = async (el) => {
     ${notes.length ? `<p class="small">${notes.map(esc).join(' · ')}</p>` : ''}
     ${(report.warnings || []).length ? `<div class="warnbox small">${report.warnings.map(esc).join('<br>')}</div>` : ''}
     ${report.unmatched.length ? `<p class="small muted">Abstract lines not placed: ${report.unmatched.slice(0, 8).map(esc).join('; ')}</p>` : ''}
+    ${gap.length ? `<div class="warnbox"><b>The abstract and the quantity sheets disagree:</b><br>${gap.map((g) => `${esc(g.f.rabNo)}: the abstract bills ₹ ${inr(g.ag)} gross, but the locations’ % in the quantity sheets add up to ₹ ${inr(g.lv)} gross for this bill.`).join('<br>')}
+      <label class="f" style="margin-top:8px">Bill amount from<select name="amtfrom"><option value="abstract">the workbook’s abstract (as submitted)</option><option value="qty" ${gap.some((g) => g.lv > g.ag) && report.added.length ? 'selected' : ''}>the quantity sheets’ % (the app calculates; you can keep editing)</option></select></label></div>` : ''}
     <label class="f" style="margin-top:10px">What is this file?<select name="mode">
       <option value="bill">A running bill – add it (new RAB number) or replace the bill with the same number</option>
       <option value="format" ${report.replaced.length && !report.added.length ? 'selected' : ''}>Format only – update names, measurements and the Excel format; keep every bill as it is</option></select></label>
@@ -102,6 +107,7 @@ ACT.uploadRab = async (el) => {
     ({ project, allBills, allSections, report } = out);
   }
   // format only: the bills made from the file are dropped; bills only re-filed under a rate split (if any) are kept
+  if (!formatOnly && r.values.amtfrom === 'qty') out.bills.forEach((b) => { if (report.files.some((f) => f.billId === b.id)) { delete b.frozen; b.status = 'Draft'; } }); // bill from the %, editable
   const fileBills = new Set(report.files.map((f) => f.billId));
   const billsToSave = formatOnly ? out.bills.filter((b) => !fileBills.has(b.id)) : out.bills;
   const batch = [{ kind: 'project', data: project }, ...billsToSave.map((b) => ({ kind: 'bill', data: b })), ...out.sections.map((s) => ({ kind: 'section', data: s }))];
@@ -112,7 +118,7 @@ ACT.uploadRab = async (el) => {
   } catch (e) { console.error(e); }
   resetCalc();
   let relinked = 0; // new links from the workbook: fill the linked coats of the draft bills (cells typed by hand stay)
-  if (report.linksChanged && typeof applyLinks === 'function') { const P2 = proj(p.id); for (const b of billsOf(p.id).filter((x) => (x.status || 'Draft') === 'Draft')) { const n = applyLinks(P2, b, sectionsOf(p.id).map((x) => x.id)); if (n) { await Store.put('bill', b); relinked += n; } } resetCalc(); }
+  if (report.linksChanged && typeof applyLinks === 'function') { const P2 = proj(p.id); for (const b of billsOf(p.id).filter((x) => (x.status || 'Draft') === 'Draft' && !x.frozen && !fileBills.has(x.id))) { const n = applyLinks(P2, b, sectionsOf(p.id).map((x) => x.id)); if (n) { await Store.put('bill', b); relinked += n; } } resetCalc(); }
 
   Sync.schedule(300); render();
   if (formatOnly) { toast(`Format updated${report.renamed ? ' · ' + report.renamed + ' locations renamed' : ''}${report.newSections ? ' · ' + report.newSections + ' new locations' : ''}${report.links ? ' · ' + report.links + ' links from formulas' : ''}${relinked ? ' · ' + relinked + ' linked coats filled in draft bills' : ' – bills unchanged'}`, 5000); return; }
