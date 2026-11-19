@@ -308,7 +308,7 @@
         if (/^(grand\s+|sub\s*-?\s*)?totals?\b/i.test(name) || /^(grand\s+)?total/i.test(str(row.getCell(1)))) { sawTotal = true; continue; }
         if (/^as\s*per\b|w(o|or)r?d\s*-?\s*order|^rate\b/i.test(name) || /^as\s*per/i.test(str(row.getCell(1)))) continue; // rate-split lines under the total
         if (!curBlock) continue;
-        const fm = name.match(/^flat\s*(?:no\.?|#)?[\s.-]*#?(?:(\d)?([a-z])[\s-]*)?(\d{3,4})$/i);
+        const fm = name.match(/^flat\s*(?:no\.?|#)?[\s.-]*#?(?:(\d)?([a-z]{1,2})[\s-]*)?(\d{3,4})$/i); // also "Flat 3GM101" (material supply)
         let key, meta;
         if (fm) {
           // "Flat-3E101", "Flat #E101" and "Flat No.101" under a "Core E" heading are the same flat E101 of block 3
@@ -318,7 +318,7 @@
           if (fm[2] && !pore) pore = 'Core ' + fm[2].toUpperCase();
         } else {
           const f = floorOf(name) || floor || ['Full height / External', 98];
-          key = `${curBlock}|${pore}|${f[0]}|${name.toLowerCase()}`; meta = { kind: 'common', name: pore && !new RegExp(pore, 'i').test(name) ? name + ' – ' + pore : name, flatNo: null, series: '', floor: f[0], floorNo: f[1] };
+          key = `${curBlock}|${pore}|${f[0]}|${name.toLowerCase()}`; meta = { kind: 'common', name: pore && !new RegExp(pore, 'i').test(name) && !/\s-\s\d[A-Z]{1,2}$/.test(name) ? name + ' – ' + pore : name, flatNo: null, series: '', floor: f[0], floorNo: f[1] };
         }
         if (seenHere.has(key) && sawTotal) continue; // summary table repeating the rows above
         if (seenHere.has(key)) { // same name twice in one table (e.g. "Main Door" and "Bedroom Door" lists): name it after its heading
@@ -651,9 +651,16 @@
       }
       // locations
       const sidx = {}; sections.forEach((s) => { sidx[secKey(s)] = s; });
+      // the same location renamed in the workbook ("Corridor (I floor) – Core E" → "Corridor (I floor) - 3E"): match on the name
+      // without the core part, within the same block, floor and core, and take the new name
+      const baseName = (n) => String(n || '').toLowerCase().replace(/\s*[–-]\s*core\s*-?\s*[a-z0-9]+\s*$/i, '').replace(/\s+-\s+\d[a-z]{1,2}\s*$/i, '').replace(/\s+/g, ' ').trim();
+      const coreOf = (x) => String(x.pore || '').toLowerCase().replace(/\s+/g, '');
+      const altKey = (bid, x) => `${bid}|${baseName(x.name)}|${x.floor || ''}|${coreOf(x)}`;
+      const aidx = {}; const adup = new Set(); sections.forEach((s) => { if (s.kind === 'flat') return; const k = altKey(s.blockId, s); if (aidx[k]) adup.add(k); else aidx[k] = s; });
       const smap = {};
       one.sections.forEach((s1) => {
         const bid = B(s1.blockId); const k = `${bid}|${String(s1.name).toLowerCase()}|${s1.floor || ''}`; let s = sidx[k];
+        if (!s && s1.kind !== 'flat') { const ak = altKey(bid, s1); if (aidx[ak] && !adup.has(ak)) { s = aidx[ak]; if (isLatest && s.name !== s1.name) { report.renamed = (report.renamed || 0) + 1; s.name = s1.name; chS.add(s.id); } sidx[k] = s; } }
         const rows1 = (s1.rows || []).map((r) => Object.assign({}, r, { cat: r.cat }));
         if (!s) { s = Object.assign(clone(s1), { id: `s_${P.id}_${stamp}_${++nNew}`, blockId: bid, rows: rows1.map((r, i) => Object.assign(r, { id: 'm' + i })) }); sections.push(s); sidx[k] = s; chS.add(s.id); report.newSections++; }
         else {
