@@ -265,12 +265,12 @@
           const ends = []; for (let k = tc + 1; k < nextT; k++) { const h = str(ws.getCell(tr, k)); if (h && !KWH.test(h)) ends.push(k); }
           if (ends.length > 1) {
             let st = tc + 1;
-            const cs = ends.map((k) => { const nm = str(ws.getCell(tr, k)); let pc = null; for (let j = st; j < k; j++) { const h = str(ws.getCell(tr, j)); if (/prev/i.test(h) && !/%|percent/i.test(h)) { pc = j; break; } } const o = { name: nm, role: roleOf(nm), cumC: k, c0: st, c1: k, prevC: pc }; st = k + 1; return o; });
+            const cs = ends.map((k) => { const nm = str(ws.getCell(tr, k)); let pc = null; for (let j = st; j < k; j++) { const h = str(ws.getCell(tr, j)); if (/prev/i.test(h) && !/%|percent/i.test(h)) pc = j; } /* the last one: a % triplet headed "Upto previous" may come first */ const o = { name: nm, role: roleOf(nm), cumC: k, c0: st, c1: k, prevC: pc }; st = k + 1; return o; });
             return { tc, title, single: true, cs };
           }
           let cq = null; for (let k = nextT - 1; k > tc; k--) { const h = str(ws.getCell(tr, k)); if (h && !/%|percent|previous|this\s*bill|present|remark/i.test(h)) { cq = k; break; } }
           const nm = cq ? str(ws.getCell(tr, cq)) : title;
-          let pc = null; for (let k = tc + 1; k < nextT; k++) { const h = str(ws.getCell(tr, k)); if (/prev/i.test(h) && !/%|percent/i.test(h)) { pc = k; break; } }
+          let pc = null; for (let k = tc + 1; k < (cq || nextT); k++) { const h = str(ws.getCell(tr, k)); if (/prev/i.test(h) && !/%|percent/i.test(h)) pc = k; } // the previous column of the quantity triplet, not of the % triplet before it
           return { tc, title, single: true, cs: cq ? [{ name: nm + ' ' + title, role: roleOf(nm), cumC: cq, c0: tc + 1, c1: cq, prevC: pc }] : [] };
         }
         const cs = coats.filter((x) => x.c > tc && x.c < nextT).map((x, i, arr) => {
@@ -519,10 +519,24 @@
     // floors per block
     blocks.forEach((b) => { const f = {}; sections.filter((s) => s.blockId === b.id).forEach((s) => { f[s.floor] = s.floorNo; }); b.floors = Object.keys(f).sort((a, c) => f[a] - f[c]); });
     const pctOf = (locs) => { const out = {}; Object.keys(locs).forEach((key) => { const s = secByKey[key]; if (!s) return; const L = locs[key]; Object.keys(L.cats).forEach((cat) => { const K = L.cats[cat]; if (!K.total) return; Object.keys(K.cum).forEach((wi) => { const T = K.total; const v = Math.min(100, Math.round(K.cum[wi] / T * 1e6) / 1e4); if (v > 0) (out[s.id] = out[s.id] || {})[wi] = v; }); }); }); return out; };
+    // per location, the % billed up to the bill before, from a workbook's "Upto previous" quantity columns – only for coats whose
+    // location rows add up to the abstract's "upto previous" (so a column the reader got wrong is never used)
+    const prevOfLocs = (locs, absPrev) => {
+      const sumL = {}; const sumA = {}; Object.values(locs).forEach((L) => Object.values(L.cats).forEach((K) => Object.keys(K.prev || {}).forEach((wi) => { sumL[wi] = (sumL[wi] || 0) + K.prev[wi]; })));
+      Object.values(absPrev || {}).forEach((bv) => Object.values(bv).forEach((m) => Object.keys(m).forEach((wi) => { sumA[wi] = (sumA[wi] || 0) + m[wi]; })));
+      const ok = (wi) => sumL[wi] !== undefined && Math.abs((sumL[wi] || 0) - (sumA[wi] || 0)) <= Math.max(1, 0.1 * (sumA[wi] || 0));
+      const out = {}; Object.keys(locs).forEach((key) => { const sc = secByKey[key]; if (!sc) return; const L = locs[key]; Object.keys(L.cats).forEach((cat) => { const K = L.cats[cat]; if (!K.total) return; Object.keys(K.prev || {}).forEach((wi) => { if (!ok(wi)) return; (out[sc.id] = out[sc.id] || {})[wi] = Math.min(100, Math.round(K.prev[wi] / K.total * 1e6) / 1e4); }); }); });
+      return out;
+    };
     let prevPct = {};
     perFile.forEach(({ w, ab }, i) => {
       const locs = w === latest ? locLatest.locs : readLocations(w.wb, project, ab).locs;
       const pct = pctOf(locs);
+      // this workbook's "Upto previous" columns are what was billed up to the bill before: where an older workbook read
+      // differently (e.g. a % typed in its quantity column), follow this one – amounts of uploaded bills come from their abstracts anyway
+      const pw = prevOfLocs(locs, perFile[i].prev);
+      if (i > 0) Object.keys(pw).forEach((sid) => Object.keys(pw[sid]).forEach((wi) => { const v = pw[sid][wi]; const was = (prevPct[sid] || {})[wi] || 0; if (Math.abs(v - was) > 0.004) { const pb = bills[i - 1]; (pb.progress[sid] = pb.progress[sid] || {})[wi] = v; (prevPct[sid] = prevPct[sid] || {})[wi] = v; report.prevFixed = (report.prevFixed || 0) + 1; } }));
+      if (w === latest) report.prevLatest = pw;
       if (i === 0 && first.inv.rab > 1) {
         // what was billed before the first uploaded RAB, per location: the "previous" columns of that workbook
         Object.keys(locs).forEach((key) => { const sc = secByKey[key]; if (!sc) return; const L = locs[key]; Object.keys(L.cats).forEach((cat) => { const K = L.cats[cat]; if (!K.total) return; Object.keys(K.prev || {}).forEach((wi) => { const T = K.total; const v = Math.round(K.prev[wi] / T * 1e6) / 1e4; if (v > 0) sc.openingPct[wi] = v; }); }); });
@@ -693,6 +707,14 @@
       // progress of this bill = every location's cumulative % where it differs from the bill before
       const abs = {}; const p1 = (one.bills[0] && one.bills[0].progress) || {};
       Object.keys(p1).forEach((sid1) => Object.keys(p1[sid1]).forEach((wi) => { const sid = smap[sid1]; if (!sid) return; (abs[sid] = abs[sid] || {})[imap[wi] || wi] = p1[sid1][wi]; }));
+      { // the workbook's "Upto previous" = what the bill before must show; fix an uploaded (frozen) bill before it that read differently
+        const pl = one.report.prevLatest || {}; const before = live().filter((b) => b.seq < seq).sort((a, b) => a.seq - b.seq); const pb = before[before.length - 1]; const ref0 = { seq };
+        Object.keys(pl).forEach((sid1) => { const sid = smap[sid1]; const sec = sid && secById[sid]; if (!sec) return; Object.keys(pl[sid1]).forEach((wi1) => { const wi = imap[wi1] || wi1; const v = pl[sid1][wi1];
+          const e = C.prevPct(sec, wi, ref0, before); if (Math.abs(v - e) <= 0.004) return;
+          if (!pb) { sec.openingPct = sec.openingPct || {}; sec.openingPct[wi] = v; chS.add(sec.id); report.prevFixed = (report.prevFixed || 0) + 1; }
+          else if (pb.frozen) { pb.progress = pb.progress || {}; (pb.progress[sid] = pb.progress[sid] || {})[wi] = v; chB.add(pb.id); report.prevFixed = (report.prevFixed || 0) + 1; }
+          else report.prevMismatch = (report.prevMismatch || 0) + 1; }); });
+      }
       const old = live().find((b) => b.seq === seq) || null;
       const sortedOld = live().slice().sort((a, b) => a.seq - b.seq);
       const nextB = sortedOld.find((b) => b.seq > seq) || null;

@@ -244,7 +244,11 @@ function zoneChips(catIds, cm, cur, p) {
 }
 /* ▾ next to a location: every item of the same group (Internal / Shaft / External) for that location */
 UI.xp = UI.xp || {};
-ACT.xpand = (el) => { const k = el.dataset.s; if (UI.xp[k]) delete UI.xp[k]; else UI.xp[k] = 1; render(); };
+ACT.xpand = (el) => { // one location open at a time
+  const k = el.dataset.s; const was = !!UI.xp[k]; UI.xp = was ? {} : { [k]: 1 }; render();
+  if (!was) requestAnimationFrame(() => { const tr = $(`button.xbtn[data-s="${k}"]`); const row = tr && tr.closest('tr'); const tw = row && row.closest('.tw'); const th = tw && tw.querySelector('thead');
+    if (row && tw) { const top = row.offsetTop - (th ? th.offsetHeight : 0); if (row.offsetTop < tw.scrollTop + (th ? th.offsetHeight : 0) || row.offsetTop > tw.scrollTop + tw.clientHeight - 80) tw.scrollTop = Math.max(0, top); } });
+};
 function zonePanel(b, p, s, zone, sorted, ed, ibc, cm, cols) {
   const tot = Calc.sectionTotals(s, p);
   const cats = Object.keys(tot).filter((k) => (ibc[k] || []).length && zoneOf(cm[k]) === zone);

@@ -80,3 +80,10 @@ ACT.tbExport = async (el) => {
   const t = document.getElementById('sidetog'); if (t) t.addEventListener('click', tog);
   document.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'b' && !/INPUT|TEXTAREA|SELECT/.test((e.target || {}).tagName || '')) { e.preventDefault(); tog(); } });
 })();
+
+/* the open location's row stays at the top of the table (just under the header) while its items scroll under it */
+(function () {
+  const fix = () => document.querySelectorAll('tr.xon').forEach((tr) => { const th = tr.closest('table').querySelector('thead'); const h = th ? th.offsetHeight : 0; tr.querySelectorAll('td').forEach((td) => { td.style.top = h + 'px'; }); });
+  const m = document.getElementById('main'); if (m && window.MutationObserver) new MutationObserver(fix).observe(m, { childList: true, subtree: true });
+  window.addEventListener('resize', fix);
+})();
